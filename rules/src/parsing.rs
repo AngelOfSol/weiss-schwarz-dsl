@@ -13,7 +13,7 @@ use nom::{
 use nom_locate::LocatedSpan;
 
 use crate::executor::{
-    semantic_analysis::hm::{types::Type, Fresh},
+    semantic_analysis::hm::{type_schemes::TypeScheme, types::Type, Fresh},
     value::ValueType,
     FnTypeInfo,
 };
@@ -148,6 +148,12 @@ pub fn parse_type(input: Span) -> IResult<Span, Type> {
     let mapping = RefCell::new(HashMap::default());
 
     parse_type_with_mapping(input, &fresh, &mapping)
+}
+
+pub fn parse_type_scheme(input: Span) -> IResult<Span, TypeScheme> {
+    let (input, ty) = parse_type(input)?;
+
+    Ok((input, TypeScheme::generalize_all(ty)))
 }
 
 pub fn parse_type_with_mapping<'a>(

@@ -389,7 +389,6 @@ pub fn type_check<'a>(ast: &'a SexprValue) -> Result<Type<'a>, TypeError<'a>> {
 
     let mut data = data;
     data.apply(&_sub);
-    dbg!(&ty);
     // dbg!(_sub);
     // dbg!(data);
     if !ty.is_concrete() {

@@ -18,7 +18,7 @@ use crate::{
             types::{Type, TypeVariable},
         },
     },
-    parsing::Span,
+    parsing::{parse_type_scheme, Span},
 };
 use lazy_static::lazy_static;
 use maplit::hashmap;
@@ -226,77 +226,11 @@ lazy_static! {
         "some" => rust_funcs::some as ExecutorFn,
     };
     pub static ref RUST_FN_TYPE_SCHEMES: HashMap<&'static str, TypeScheme<'static>> = {
-        use semantic_analysis::hm::types::TypeName as N;
         hashmap! {
-            "card" => TypeScheme {
-                type_variables: maplit::hashset![],
-                ty: Type::Constant {
-                    span: Span::new("fn card(i32) -> card"),
-                    name: N::Fn,
-                    parameters: vec![
-                        Type::Constant {
-                            span: Span::new("i32"),
-                            name: N::Integer,
-                            parameters: vec![],
-                        },
-                        Type::Constant {
-                            span: Span::new("card"),
-                            name: N::Card,
-                            parameters: vec![],
-                        }
-                    ],
-                }
-            },
-            "move" => TypeScheme {
-                type_variables: maplit::hashset![],
-                ty: Type::Constant {
-                    span: Span::new("fn move(card, zone) -> zone"),
-                    name: N::Fn,
-                    parameters: vec![
-                        Type::Constant {
-                            span: Span::new("fn move(card, zone) -> zone"),
-                            name: N::Card,
-                            parameters: vec![],
-                        },
-                        Type::Constant {
-                            span: Span::new("fn move(card, zone) -> zone"),
-                            name: N::Zone,
-                            parameters: vec![],
-                        },
-                        Type::Constant {
-                            span: Span::new("fn move(card, zone) -> zone"),
-                            name: N::Zone,
-                            parameters: vec![],
-                        }
-                    ],
-                }
-            },
-            "print" => TypeScheme {
-                type_variables: maplit::hashset![TypeVariable::new(0)],
-                ty: Type::Constant {
-                    span: Span::new("fn print<T>(T) -> T"),
-                    name: N::Fn,
-                    parameters: vec![
-                        Type::Var(TypeVariable::new(0), Span::new("T")),
-                        Type::Var(TypeVariable::new(0), Span::new("T")),
-                    ],
-                }
-            },
-            "some" => TypeScheme {
-                type_variables: maplit::hashset![TypeVariable::new(0)],
-                ty: Type::Constant {
-                    span: Span::new("fn some<T>(T) -> T"),
-                    name: N::Fn,
-                    parameters: vec![
-                        Type::Var(TypeVariable::new(0), Span::new("T")),
-                        Type::Constant {
-                            span: Span::new("T?"),
-                            name: N::Option,
-                            parameters: vec![Type::Var(TypeVariable::new(0), Span::new("T"))],
-                        }
-                    ],
-                }
-            },
+            "card" => parse_type_scheme(Span::new("fn(i32) -> card")).unwrap().1,
+            "move" => parse_type_scheme(Span::new("fn(card, zone) -> zone")).unwrap().1,
+            "print" => parse_type_scheme(Span::new("fn(T) -> T")).unwrap().1,
+            "some" => parse_type_scheme(Span::new("fn(T) -> ?T")).unwrap().1,
         }
     };
 }

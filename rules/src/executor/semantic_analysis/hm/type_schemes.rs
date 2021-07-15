@@ -48,4 +48,11 @@ impl<'a> TypeScheme<'a> {
                 acc.instantiate(*elem, variables[elem])
             })
     }
+
+    pub fn generalize_all(ty: Type<'a>) -> Self {
+        Self {
+            type_variables: ty.free_variables(),
+            ty,
+        }
+    }
 }
