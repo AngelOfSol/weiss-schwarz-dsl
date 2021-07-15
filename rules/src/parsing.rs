@@ -1,19 +1,23 @@
 pub mod lexing;
 
-use std::fmt::Display;
+use std::{cell::RefCell, collections::HashMap, fmt::Display};
 
 use nom::{
     branch::alt,
     bytes::complete::tag,
-    combinator::{consumed, map, map_opt, opt, value},
-    multi::{many0, many1},
+    combinator::{consumed, map, map_opt, opt, recognize, value},
+    multi::{many0, many1, separated_list0},
     sequence::{delimited, pair, preceded, tuple},
     IResult,
 };
-use nom_locate::{position, LocatedSpan};
+use nom_locate::LocatedSpan;
 
-use crate::executor::{value::ValueType, FnTypeInfo};
-use crate::model::ZoneId;
+use crate::executor::{
+    semantic_analysis::hm::{types::Type, Fresh},
+    value::ValueType,
+    FnTypeInfo,
+};
+use crate::{executor::semantic_analysis::hm::types::TypeVariable, model::ZoneId};
 
 pub type Span<'a> = LocatedSpan<&'a str>;
 
@@ -85,8 +89,10 @@ pub fn parse_let(input: Span) -> IResult<Span, SexprValue> {
     )(input)
 }
 
-pub fn parse_fn(input: Span) -> IResult<Span, SexprValue> {
-    map(
+pub fn parse_fn<'a>(input: Span<'a>) -> IResult<Span<'a>, SexprValue<'a>> {
+    let fresh = RefCell::new(Fresh::default());
+    let mapping = RefCell::new(HashMap::default());
+    let (input, result) = map(
         consumed(delimited(
             lexing::open,
             tuple((
@@ -99,65 +105,112 @@ pub fn parse_fn(input: Span) -> IResult<Span, SexprValue> {
                         nom::sequence::pair(
                             lexing::identifier,
                             map(
-                                opt(preceded(
+                                consumed(opt(preceded(
                                     tuple((
                                         opt(lexing::whitespace),
                                         lexing::ascribe,
                                         opt(lexing::whitespace),
                                     )),
-                                    parse_type,
-                                )),
-                                |inner| inner.unwrap_or(ValueType::Inferred),
+                                    |input| parse_type_with_mapping(input, &fresh, &mapping),
+                                ))),
+                                |(span, inner)| {
+                                    inner.unwrap_or(Type::type_var(fresh.borrow_mut().next(), span))
+                                },
                             ),
                         ),
                     )),
                     lexing::close,
                 ),
-                opt(delimited(
+                consumed(opt(delimited(
                     lexing::whitespace,
-                    preceded(pair(lexing::arrow, opt(lexing::whitespace)), parse_type),
+                    preceded(pair(lexing::arrow, opt(lexing::whitespace)), |input| {
+                        parse_type_with_mapping(input, &fresh, &mapping)
+                    }),
                     lexing::whitespace,
-                )),
+                ))),
                 preceded(opt(lexing::whitespace), parse_sexpr_value),
             )),
             lexing::close,
         )),
-        |(span, (_, _, arguments, return_type, eval))| SexprValue::Fn {
+        |(span, (_, _, arguments, (ret_span, return_type), eval))| SexprValue::Fn {
             arguments: arguments,
-            return_type: return_type.unwrap_or(ValueType::Inferred),
+            return_type: return_type.unwrap_or(Type::type_var(fresh.borrow_mut().next(), ret_span)),
             eval: Box::new(eval),
             span,
         },
-    )(input)
+    )(input)?;
+
+    Ok((input, result))
 }
 
-pub fn parse_type(input: Span) -> IResult<Span, ValueType> {
+pub fn parse_type(input: Span) -> IResult<Span, Type> {
+    let fresh = RefCell::new(Fresh::default());
+    let mapping = RefCell::new(HashMap::default());
+
+    parse_type_with_mapping(input, &fresh, &mapping)
+}
+
+pub fn parse_type_with_mapping<'a>(
+    input: Span<'a>,
+    fresh: &RefCell<Fresh>,
+    mapping: &RefCell<HashMap<&'a str, TypeVariable>>,
+) -> IResult<Span<'a>, Type<'a>> {
     alt((
-        map(preceded(tag("?"), parse_type), |inner| {
-            ValueType::Option(Box::new(inner))
-        }),
-        value(ValueType::Integer, tag("i32")),
-        value(ValueType::Unit, tag("()")),
-        value(ValueType::Zone, tag("zone")),
-        value(ValueType::CardId, tag("card_id")),
-        value(ValueType::Bool, tag("bool")),
+        map(recognize(tag("i32")), Type::integer),
+        map(recognize(tag("()")), Type::unit),
+        map(recognize(tag("zone")), Type::zone),
+        map(recognize(tag("card")), Type::card),
+        map(recognize(tag("bool")), Type::boolean),
+        |input| parse_fn_type(input, fresh, mapping),
         map(
-            delimited(lexing::open_array, parse_type, lexing::close_array),
-            |inner| ValueType::Array(Box::new(inner)),
-        ), // value(ValueType::Fn(Box<FnTypeInfo>), tag("")),
-        map(
-            pair(
-                delimited(lexing::open, many0(parse_type), lexing::close),
-                preceded(lexing::arrow, parse_type),
+            preceded(
+                tag("?"),
+                consumed(|i| parse_type_with_mapping(i, fresh, mapping)),
             ),
-            |(argument_types, return_type)| {
-                ValueType::Fn(Box::new(FnTypeInfo {
-                    argument_types,
-                    return_type,
-                }))
-            },
+            |(span, ty)| Type::option(ty, span),
         ),
+        map(
+            delimited(
+                lexing::open_array,
+                consumed(|i| parse_type_with_mapping(i, fresh, mapping)),
+                lexing::close_array,
+            ),
+            |(span, ty)| Type::array(ty, span),
+        ),
+        map(consumed(lexing::identifier), |(span, ident)| {
+            let mut mapping = mapping.borrow_mut();
+            let mut fresh = fresh.borrow_mut();
+            let tv = mapping.entry(ident).or_insert_with(|| fresh.next()).clone();
+            Type::type_var(tv, span)
+        }),
     ))(input)
+}
+pub fn parse_fn_type<'a>(
+    input: Span<'a>,
+    fresh: &RefCell<Fresh>,
+    mapping: &RefCell<HashMap<&'a str, TypeVariable>>,
+) -> IResult<Span<'a>, Type<'a>> {
+    let (input, (span, (mut args, ret))) = consumed(tuple((
+        delimited(
+            tuple((tag("fn"), lexing::open)),
+            separated_list0(
+                tuple((opt(lexing::whitespace), tag(","), opt(lexing::whitespace))),
+                |input| parse_type_with_mapping(input, fresh, mapping),
+            ),
+            lexing::close,
+        ),
+        opt(preceded(
+            delimited(
+                opt(lexing::whitespace),
+                lexing::arrow,
+                opt(lexing::whitespace),
+            ),
+            |input| parse_type_with_mapping(input, fresh, mapping),
+        )),
+    )))(input)?;
+    args.push(ret.unwrap_or(Type::unit(input)));
+
+    Ok((input, Type::function(args, span)))
 }
 
 pub fn parse_if(input: Span) -> IResult<Span, SexprValue> {
@@ -250,8 +303,8 @@ pub enum SexprValue<'a> {
         span: Span<'a>,
     },
     Fn {
-        arguments: Vec<(&'a str, ValueType)>,
-        return_type: ValueType,
+        arguments: Vec<(&'a str, Type<'a>)>,
+        return_type: Type<'a>,
         eval: Box<SexprValue<'a>>,
         span: Span<'a>,
     },

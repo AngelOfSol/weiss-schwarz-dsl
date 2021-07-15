@@ -31,7 +31,7 @@ enum TypeTree<'a> {
         span: Span<'a>,
     },
     Fn {
-        bindings: Vec<&'a str>,
+        bindings: Vec<(&'a str, Type<'a>)>,
         expr: Box<TypeTree<'a>>,
         span: Span<'a>,
     },
@@ -69,7 +69,7 @@ impl<'a> TypeTree<'a> {
 #[derive(Debug, Default)]
 pub struct Fresh(usize);
 impl Fresh {
-    fn next(&mut self) -> TypeVariable {
+    pub fn next(&mut self) -> TypeVariable {
         let ret = self.0;
         self.0 += 1;
         TypeVariable::new(ret)
@@ -81,7 +81,7 @@ fn unify<'a>(lhs: Type<'a>, rhs: Type<'a>) -> Result<Substitution<'a>, TypeError
             Type::Constant {
                 name: lhs_name,
                 parameters: lhs_params,
-                span: lhs_span,
+                ..
             },
             Type::Constant {
                 name: rhs_name,
@@ -229,8 +229,8 @@ fn infer<'a>(
 
             let parameters = bindings
                 .iter()
-                .map(|binding| {
-                    let var = Type::Var(fresh.next(), *span);
+                .map(|(binding, ty)| {
+                    let var = ty.clone();
                     env.map.insert(
                         binding,
                         TypeScheme {
@@ -315,7 +315,7 @@ fn build_type_tree<'a>(sexpr: &SexprValue<'a>, fresh: &mut Fresh) -> TypeTree<'a
             span,
             ..
         } => TypeTree::Fn {
-            bindings: arguments.iter().map(|(name, _)| *name).collect(),
+            bindings: arguments.clone(),
             expr: Box::new(build_type_tree(eval, fresh)),
             span: *span,
         },

@@ -54,6 +54,14 @@ pub fn open(input: Span) -> IResult<Span, ()> {
     value((), tag("("))(input)
 }
 
+pub fn close_type_variables(input: Span) -> IResult<Span, ()> {
+    value((), tag(">"))(input)
+}
+
+pub fn open_type_variables(input: Span) -> IResult<Span, ()> {
+    value((), tag("<"))(input)
+}
+
 pub fn close(input: Span) -> IResult<Span, ()> {
     value((), tag(")"))(input)
 }

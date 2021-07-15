@@ -67,7 +67,7 @@ impl<'a> Display for Type<'a> {
                 ),
                 TypeName::Option => write!(
                     f,
-                    "{}?",
+                    "?{}",
                     parameters
                         .iter()
                         .map(|param| param.to_string())
@@ -180,5 +180,66 @@ impl<'a> Type<'a> {
             },
             Type::Var(v, span) => rules.map.get(v).cloned().unwrap_or(Type::Var(*v, *span)),
         }
+    }
+
+    pub fn integer(span: Span<'a>) -> Self {
+        Self::Constant {
+            name: TypeName::Integer,
+            parameters: vec![],
+            span,
+        }
+    }
+    pub fn unit(span: Span<'a>) -> Self {
+        Self::Constant {
+            name: TypeName::Unit,
+            parameters: vec![],
+            span,
+        }
+    }
+    pub fn boolean(span: Span<'a>) -> Self {
+        Self::Constant {
+            name: TypeName::Bool,
+            parameters: vec![],
+            span,
+        }
+    }
+    pub fn zone(span: Span<'a>) -> Self {
+        Self::Constant {
+            name: TypeName::Zone,
+            parameters: vec![],
+            span,
+        }
+    }
+    pub fn card(span: Span<'a>) -> Self {
+        Self::Constant {
+            name: TypeName::Card,
+            parameters: vec![],
+            span,
+        }
+    }
+    pub fn option(ty: Type<'a>, span: Span<'a>) -> Self {
+        Self::Constant {
+            name: TypeName::Option,
+            parameters: vec![ty],
+            span,
+        }
+    }
+    pub fn array(ty: Type<'a>, span: Span<'a>) -> Self {
+        Self::Constant {
+            name: TypeName::Array,
+            parameters: vec![ty],
+            span,
+        }
+    }
+
+    pub fn function(tys: Vec<Type<'a>>, span: Span<'a>) -> Self {
+        Self::Constant {
+            name: TypeName::Fn,
+            parameters: tys,
+            span,
+        }
+    }
+    pub fn type_var(ty: TypeVariable, span: Span<'a>) -> Self {
+        Self::Var(ty, span)
     }
 }
