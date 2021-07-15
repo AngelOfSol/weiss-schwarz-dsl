@@ -148,7 +148,7 @@ impl<'a> Type<'a> {
         }
     }
 
-    pub fn instantiate(self, left: TypeVariable, right: TypeVariable) -> Self {
+    pub(crate) fn instantiate(self, left: TypeVariable, right: TypeVariable) -> Self {
         match self {
             Type::Constant {
                 name,
@@ -167,7 +167,7 @@ impl<'a> Type<'a> {
         }
     }
 
-    pub fn apply(&self, rules: &Substitution<'a>) -> Self {
+    pub(crate) fn apply(&self, rules: &Substitution<'a>) -> Self {
         match self {
             Type::Constant {
                 name,

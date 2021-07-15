@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fs::write};
 
-use egui::{Color32, Layout, ScrollArea, TextEdit, Ui, Vec2};
+use egui::{Color32, ScrollArea, TextEdit, Ui, Vec2};
 use rules::{
     executor::{
         code_generation::generate, error::RuntimeError, semantic_analysis, Executor, ExecutorHeap,

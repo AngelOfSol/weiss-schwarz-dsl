@@ -12,11 +12,7 @@ use nom::{
 };
 use nom_locate::LocatedSpan;
 
-use crate::executor::{
-    semantic_analysis::hm::{type_schemes::TypeScheme, types::Type, Fresh},
-    value::ValueType,
-    FnTypeInfo,
-};
+use crate::executor::semantic_analysis::hm::{type_schemes::TypeScheme, types::Type, Fresh};
 use crate::{executor::semantic_analysis::hm::types::TypeVariable, model::ZoneId};
 
 pub type Span<'a> = LocatedSpan<&'a str>;
@@ -150,7 +146,7 @@ pub fn parse_type(input: Span) -> IResult<Span, Type> {
     parse_type_with_mapping(input, &fresh, &mapping)
 }
 
-pub fn parse_type_scheme(input: Span) -> IResult<Span, TypeScheme> {
+pub(crate) fn parse_type_scheme(input: Span) -> IResult<Span, TypeScheme> {
     let (input, ty) = parse_type(input)?;
 
     Ok((input, TypeScheme::generalize_all(ty)))

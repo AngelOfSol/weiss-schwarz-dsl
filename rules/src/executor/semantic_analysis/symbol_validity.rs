@@ -1,6 +1,6 @@
 use crate::{
     executor::{
-        error::{CompileError, SymbolError},
+        error::SymbolError,
         semantic_analysis::{SymbolTable, VerifySexpr},
         Executor,
     },

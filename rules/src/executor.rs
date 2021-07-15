@@ -11,12 +11,7 @@ use crate::{
 };
 use crate::{
     executor::{
-        bytecode::Bytecode,
-        error::RuntimeError,
-        semantic_analysis::hm::{
-            type_schemes::TypeScheme,
-            types::{Type, TypeVariable},
-        },
+        bytecode::Bytecode, error::RuntimeError, semantic_analysis::hm::type_schemes::TypeScheme,
     },
     parsing::{parse_type_scheme, Span},
 };
@@ -220,12 +215,12 @@ impl ExecutorStack {
 
 pub type ExecutorFn = fn(&mut Executor, &mut Game) -> Result<(), RuntimeError>;
 lazy_static! {
-    pub static ref RUST_FN: HashMap<&'static str, ExecutorFn> = hashmap! {
+    pub(crate) static ref RUST_FN: HashMap<&'static str, ExecutorFn> = hashmap! {
         "card" => rust_funcs::card as ExecutorFn,
         "move" => rust_funcs::move_card as ExecutorFn,
         "some" => rust_funcs::some as ExecutorFn,
     };
-    pub static ref RUST_FN_TYPE_SCHEMES: HashMap<&'static str, TypeScheme<'static>> = {
+    pub(crate) static ref RUST_FN_TYPE_SCHEMES: HashMap<&'static str, TypeScheme<'static>> = {
         hashmap! {
             "card" => parse_type_scheme(Span::new("fn(i32) -> card")).unwrap().1,
             "move" => parse_type_scheme(Span::new("fn(card, zone) -> zone")).unwrap().1,

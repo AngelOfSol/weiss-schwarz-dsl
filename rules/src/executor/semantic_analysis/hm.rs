@@ -2,7 +2,7 @@ use std::{collections::HashSet, iter::once};
 
 use crate::{
     executor::{
-        error::{CompileError, TypeError},
+        error::TypeError,
         semantic_analysis::hm::{
             substitution::Substitution,
             type_environment::TypeEnvironment,

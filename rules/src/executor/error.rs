@@ -1,9 +1,9 @@
 use crate::{
     executor::{
         semantic_analysis::hm::types::Type,
-        value::{Value, ValueType},
+        value::{Value },
     },
-    parsing::{SexprValue, Span},
+    parsing::{ Span},
 };
 use thiserror::Error;
 

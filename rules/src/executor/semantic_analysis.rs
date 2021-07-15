@@ -3,8 +3,6 @@ mod symbol_validity;
 
 use std::collections::HashSet;
 
-use maplit::hashset;
-
 use crate::{
     executor::{
         error::{CompileError, SymbolError},
@@ -42,10 +40,7 @@ pub fn semantic_analysis<'a>(
     ast: &'a SexprValue,
     _executor: &Executor,
 ) -> Result<(), CompileError<'a>> {
-    let default_symbol_table = hashset!("print")
-        .into_iter()
-        .chain(RUST_FN_TYPE_SCHEMES.keys().copied())
-        .collect();
+    let default_symbol_table = RUST_FN_TYPE_SCHEMES.keys().copied().collect();
 
     check_symbol_validity(ast, default_symbol_table, _executor)?;
     hm::type_check(ast)?;
