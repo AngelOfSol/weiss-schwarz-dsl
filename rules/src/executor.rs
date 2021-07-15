@@ -5,15 +5,10 @@ pub mod rust_funcs;
 pub mod semantic_analysis;
 pub mod value;
 
+use crate::executor::{bytecode::Bytecode, error::RuntimeError};
 use crate::{
     executor::value::{Value, ValueFrom, ValueType},
     model::Game,
-};
-use crate::{
-    executor::{
-        bytecode::Bytecode, error::RuntimeError, semantic_analysis::hm::type_schemes::TypeScheme,
-    },
-    parsing::{parse_type_scheme, Span},
 };
 use lazy_static::lazy_static;
 use maplit::hashmap;
@@ -220,14 +215,6 @@ lazy_static! {
         "move" => rust_funcs::move_card as ExecutorFn,
         "some" => rust_funcs::some as ExecutorFn,
     };
-    pub(crate) static ref RUST_FN_TYPE_SCHEMES: HashMap<&'static str, TypeScheme<'static>> = {
-        hashmap! {
-            "card" => parse_type_scheme(Span::new("fn(i32) -> card")).unwrap().1,
-            "move" => parse_type_scheme(Span::new("fn(card, zone) -> zone")).unwrap().1,
-            "print" => parse_type_scheme(Span::new("fn(T) -> T")).unwrap().1,
-            "some" => parse_type_scheme(Span::new("fn(T) -> ?T")).unwrap().1,
-        }
-    };
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
@@ -249,50 +236,3 @@ impl Display for FnTypeInfo {
         )
     }
 }
-
-// use crate::model::Color;
-// use std::{borrow::Borrow, collections::HashMap};
-//
-// #[derive(Default)]
-// pub struct Scope<'a> {
-//     parent: Option<&'a mut Scope<'a>>,
-//     colors: HashMap<String, Color>,
-//     integers: HashMap<String, i32>,
-// }
-
-// pub trait ScopedType {
-//     fn get<'this>(scope: &'this Scope<'_>, key: &str) -> Option<&'this Self>;
-//     fn set<'this>(self, scope: &'this mut Scope<'_>, key: String);
-// }
-
-// impl<'a> Scope<'a> {
-//     pub fn get<'this, T: ScopedType>(&'this self, key: &str) -> Option<&'this T> {
-//         T::get(self, key).or_else(|| self.parent.as_ref().and_then(|scope| scope.get(key)))
-//     }
-//     pub fn set<'this, T: ScopedType>(&'this mut self, key: String, value: T) {
-//         value.set(self, key)
-//     }
-//     pub fn child_scope<'this: 'a>(&'this mut self) -> Scope<'this> {
-//         Scope {
-//             parent: Some(self),
-//             ..Self::default()
-//         }
-//     }
-// }
-
-// macro_rules! impl_scoped_type {
-//     ($impl_type:ty, $field:ident) => {
-//         impl ScopedType for $impl_type {
-//             fn get<'this>(scope: &'this Scope<'_>, key: &str) -> Option<&'this Self> {
-//                 scope.$field.get(key.borrow())
-//             }
-
-//             fn set<'this>(self, scope: &'this mut Scope<'_>, key: String) {
-//                 scope.$field.insert(key, self);
-//             }
-//         }
-//     };
-// }
-
-// impl_scoped_type!(i32, integers);
-// impl_scoped_type!(Color, colors);

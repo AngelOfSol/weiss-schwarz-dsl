@@ -7,9 +7,9 @@ use crate::{
     executor::{
         error::{CompileError, SymbolError},
         semantic_analysis::symbol_validity::check_symbol_validity,
-        Executor, RUST_FN_TYPE_SCHEMES,
+        RUST_FN,
     },
-    parsing::SexprValue,
+    parsing::{ExternDeclaration, SexprValue},
 };
 
 pub type SymbolTable<'a> = HashSet<&'a str>;
@@ -42,11 +42,20 @@ impl<'sexpr> VerifySexpr for SexprValue<'sexpr> {
 
 pub fn semantic_analysis<'a>(
     ast: &'a SexprValue,
-    _executor: &Executor,
+    externs: &Vec<ExternDeclaration<'a>>,
 ) -> Result<(), CompileError<'a>> {
-    let default_symbol_table = RUST_FN_TYPE_SCHEMES.keys().copied().collect();
+    let symbol_table = externs.iter().map(|item| item.name).collect();
 
-    check_symbol_validity(ast, default_symbol_table, _executor)?;
-    hm::type_check(ast)?;
+    for decl in externs.iter().filter(|decl| decl.name != "print") {
+        if !RUST_FN.contains_key(decl.name) {
+            return Err(CompileError::InvalidExtern {
+                name: decl.name,
+                span: decl.span,
+            });
+        }
+    }
+
+    check_symbol_validity(ast, symbol_table)?;
+    hm::type_check(ast, externs)?;
     Ok(())
 }

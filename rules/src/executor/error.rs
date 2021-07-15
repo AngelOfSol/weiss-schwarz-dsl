@@ -21,6 +21,11 @@ pub enum CompileError<'a> {
     Symbol(SymbolError<'a>),
     #[error("{0}")]
     Type(TypeError<'a>),
+    #[error("error: invalid extern\ncode:{}:{}\n\t{span}", .span.location_line(), .span.get_utf8_column())]
+    InvalidExtern {
+        name: &'a str,
+        span: Span<'a>,
+    }
 }
 
 impl<'a> From<SymbolError<'a>> for CompileError<'a> {

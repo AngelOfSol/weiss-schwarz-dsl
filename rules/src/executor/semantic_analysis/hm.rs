@@ -10,7 +10,7 @@ use crate::{
             types::{Type, TypeName, TypeVariable},
         },
     },
-    parsing::{SexprValue, Span},
+    parsing::{parse_type_scheme, ExternDeclaration, SexprValue, Span},
 };
 
 pub mod substitution;
@@ -352,35 +352,23 @@ fn build_type_tree<'a>(sexpr: &SexprValue<'a>, fresh: &mut Fresh) -> TypeTree<'a
     }
 }
 
-pub fn type_check<'a>(ast: &'a SexprValue) -> Result<Type<'a>, TypeError<'a>> {
+pub fn type_check<'a>(
+    ast: &'a SexprValue,
+    externs: &Vec<ExternDeclaration<'a>>,
+) -> Result<Type<'a>, TypeError<'a>> {
     let mut fresh = Fresh::default();
     let mut env = TypeEnvironment::default();
 
-    let idx = fresh.next();
-    let s_var = Type::Var(idx, Span::new("if"));
+    for decl in externs {
+        env.map.insert(decl.name, decl.type_scheme.clone());
+    }
+
     env.map.insert(
         "if",
-        TypeScheme {
-            type_variables: maplit::hashset! { idx },
-            ty: Type::Constant {
-                span: Span::new("if"),
-                name: TypeName::Fn,
-                parameters: vec![
-                    Type::Constant {
-                        span: Span::new("bool"),
-                        name: TypeName::Bool,
-                        parameters: vec![],
-                    },
-                    s_var.clone(),
-                    s_var.clone(),
-                    s_var.clone(),
-                ],
-            },
-        },
+        parse_type_scheme(Span::new("fn(bool, T, T) -> T"))
+            .unwrap()
+            .1,
     );
-    for (key, value) in crate::executor::RUST_FN_TYPE_SCHEMES.iter() {
-        env.map.insert(key, value.clone());
-    }
 
     let data = build_type_tree(ast, &mut fresh);
 

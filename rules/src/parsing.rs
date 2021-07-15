@@ -7,7 +7,7 @@ use nom::{
     bytes::complete::tag,
     combinator::{consumed, map, map_opt, opt, recognize, value},
     multi::{many0, many1, separated_list0},
-    sequence::{delimited, pair, preceded, tuple},
+    sequence::{delimited, pair, preceded, terminated, tuple},
     IResult,
 };
 use nom_locate::LocatedSpan;
@@ -410,6 +410,16 @@ pub struct ExternDeclaration<'a> {
     pub name: &'a str,
     pub(crate) type_scheme: TypeScheme<'a>,
     pub span: Span<'a>,
+}
+
+pub fn parse_program(input: Span) -> IResult<Span, (Vec<ExternDeclaration>, SexprValue)> {
+    tuple((
+        terminated(
+            separated_list0(lexing::whitespace, parse_extern),
+            opt(lexing::whitespace),
+        ),
+        parse_sexpr_value,
+    ))(input)
 }
 
 pub fn parse_extern(input: Span) -> IResult<Span, ExternDeclaration> {
