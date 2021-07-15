@@ -6,24 +6,12 @@ use crate::executor::semantic_analysis::hm::{
     types::{Type, TypeVariable},
 };
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct TypeEnvironment<'a> {
-    pub map: HashMap<&'a str, TypeScheme>,
+    pub map: HashMap<&'a str, TypeScheme<'a>>,
 }
 
 impl<'a> TypeEnvironment<'a> {
-    #[allow(dead_code)]
-    pub fn remove(&self, variable: &'a str) -> Self {
-        Self {
-            map: self
-                .map
-                .iter()
-                .filter(|(k, _)| **k != variable)
-                .map(|(k, v)| (*k, v.clone()))
-                .collect(),
-        }
-    }
-
     pub fn free_variables(&self) -> HashSet<TypeVariable> {
         self.map
             .values()
@@ -31,7 +19,7 @@ impl<'a> TypeEnvironment<'a> {
             .collect()
     }
 
-    pub fn apply(&self, rules: &Substitution) -> Self {
+    pub fn apply(&self, rules: &'a Substitution<'a>) -> Self {
         Self {
             map: self
                 .map
@@ -41,7 +29,7 @@ impl<'a> TypeEnvironment<'a> {
         }
     }
 
-    pub fn generalize(&self, ty: Type) -> TypeScheme {
+    pub fn generalize(&self, ty: Type<'a>) -> TypeScheme<'a> {
         TypeScheme {
             type_variables: ty
                 .free_variables()

@@ -1,6 +1,6 @@
 use crate::{
     executor::{
-        error::CompileError,
+        error::{CompileError, SymbolError},
         semantic_analysis::{SymbolTable, VerifySexpr},
         Executor,
     },
@@ -11,7 +11,7 @@ pub fn check_symbol_validity<'a>(
     ast: &'a SexprValue,
     mut symbols: SymbolTable<'a>,
     _executor: &Executor,
-) -> Result<(), CompileError<'a>> {
+) -> Result<(), SymbolError<'a>> {
     match ast {
         SexprValue::Sexpr(sexpr) => match sexpr.target {
             "print" => check_symbol_validity(&sexpr.arguments[0], symbols, _executor),
@@ -29,11 +29,14 @@ pub fn check_symbol_validity<'a>(
             }
             Ok(())
         }
-        SexprValue::Symbol(symbol, ..) => {
+        SexprValue::Symbol(symbol, span) => {
             if symbols.contains(symbol) {
                 Ok(())
             } else {
-                Err(CompileError::InvalidSymbol(symbol))
+                Err(SymbolError::InvalidSymbol {
+                    name: symbol,
+                    span: *span,
+                })
             }
         }
         SexprValue::If {
@@ -60,10 +63,10 @@ pub fn check_symbol_validity<'a>(
 
             check_symbol_validity(expr, symbols, _executor)
         }
-        SexprValue::Integer(_)
-        | SexprValue::Zone(_)
-        | SexprValue::Unit(_)
-        | SexprValue::Bool(_)
-        | SexprValue::None => Ok(()),
+        SexprValue::Integer(..)
+        | SexprValue::Zone(..)
+        | SexprValue::Unit(..)
+        | SexprValue::Bool(..)
+        | SexprValue::None(..) => Ok(()),
     }
 }

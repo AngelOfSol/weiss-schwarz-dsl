@@ -7,57 +7,69 @@ use nom::{
     IResult,
 };
 
-pub fn identifier(input: &str) -> IResult<&str, &str> {
-    recognize(pair(
-        one_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"),
-        many0(one_of(
-            "-_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
-        )),
-    ))(input)
+use crate::parsing::Span;
+
+fn from_span(span: Span) -> &str {
+    *span.fragment()
 }
 
-pub fn number(input: &str) -> IResult<&str, i32> {
-    map(recognize(many1(one_of("0123456789"))), |data: &str| {
-        data.parse().unwrap()
+pub fn identifier(input: Span) -> IResult<Span, &str> {
+    map(
+        recognize(pair(
+            one_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"),
+            many0(one_of(
+                "-_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
+            )),
+        )),
+        from_span,
+    )(input)
+}
+
+pub fn number(input: Span) -> IResult<Span, i32> {
+    map(recognize(many1(one_of("0123456789"))), |data: Span| {
+        data.fragment().parse().unwrap()
     })(input)
 }
 
-pub fn whitespace(input: &str) -> IResult<&str, &str> {
+pub fn whitespace(input: Span) -> IResult<Span, Span> {
     multispace1(input)
 }
 
-pub fn raw_string(input: &str) -> IResult<&str, &str> {
-    delimited(tag("\""), recognize(many0(not(tag("\"")))), tag("\""))(input)
+pub fn raw_string(input: Span) -> IResult<Span, &str> {
+    map(
+        delimited(tag("\""), recognize(many0(not(tag("\"")))), tag("\"")),
+        from_span,
+    )(input)
 }
 
-pub fn backtick(input: &str) -> IResult<&str, ()> {
+pub fn backtick(input: Span) -> IResult<Span, ()> {
     value((), tag("`"))(input)
 }
 
-pub fn arrow(input: &str) -> IResult<&str, ()> {
+pub fn arrow(input: Span) -> IResult<Span, ()> {
     value((), tag("->"))(input)
 }
 
-pub fn open(input: &str) -> IResult<&str, ()> {
+pub fn open(input: Span) -> IResult<Span, ()> {
     value((), tag("("))(input)
 }
 
-pub fn close(input: &str) -> IResult<&str, ()> {
+pub fn close(input: Span) -> IResult<Span, ()> {
     value((), tag(")"))(input)
 }
 
-pub fn open_array(input: &str) -> IResult<&str, ()> {
+pub fn open_array(input: Span) -> IResult<Span, ()> {
     value((), tag("["))(input)
 }
 
-pub fn close_array(input: &str) -> IResult<&str, ()> {
+pub fn close_array(input: Span) -> IResult<Span, ()> {
     value((), tag("]"))(input)
 }
 
-pub fn ascribe(input: &str) -> IResult<&str, ()> {
+pub fn ascribe(input: Span) -> IResult<Span, ()> {
     value((), tag(":"))(input)
 }
 
-pub fn traits(input: &str) -> IResult<&str, ()> {
+pub fn traits(input: Span) -> IResult<Span, ()> {
     value((), tag("#"))(input)
 }

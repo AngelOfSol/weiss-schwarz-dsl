@@ -5,17 +5,20 @@ pub mod rust_funcs;
 pub mod semantic_analysis;
 pub mod value;
 
-use crate::executor::{
-    bytecode::Bytecode,
-    error::RuntimeError,
-    semantic_analysis::hm::{
-        type_schemes::TypeScheme,
-        types::{Type, TypeVariable},
-    },
-};
 use crate::{
     executor::value::{Value, ValueFrom, ValueType},
     model::Game,
+};
+use crate::{
+    executor::{
+        bytecode::Bytecode,
+        error::RuntimeError,
+        semantic_analysis::hm::{
+            type_schemes::TypeScheme,
+            types::{Type, TypeVariable},
+        },
+    },
+    parsing::Span,
 };
 use lazy_static::lazy_static;
 use maplit::hashmap;
@@ -222,19 +225,22 @@ lazy_static! {
         "move" => rust_funcs::move_card as ExecutorFn,
         "some" => rust_funcs::some as ExecutorFn,
     };
-    pub static ref RUST_FN_TYPE_SCHEMES: HashMap<&'static str, TypeScheme> = {
+    pub static ref RUST_FN_TYPE_SCHEMES: HashMap<&'static str, TypeScheme<'static>> = {
         use semantic_analysis::hm::types::TypeName as N;
         hashmap! {
             "card" => TypeScheme {
                 type_variables: maplit::hashset![],
                 ty: Type::Constant {
+                    span: Span::new("fn card(i32) -> card"),
                     name: N::Fn,
                     parameters: vec![
                         Type::Constant {
+                            span: Span::new("i32"),
                             name: N::Integer,
                             parameters: vec![],
                         },
                         Type::Constant {
+                            span: Span::new("card"),
                             name: N::Card,
                             parameters: vec![],
                         }
@@ -244,17 +250,21 @@ lazy_static! {
             "move" => TypeScheme {
                 type_variables: maplit::hashset![],
                 ty: Type::Constant {
+                    span: Span::new("fn move(card, zone) -> zone"),
                     name: N::Fn,
                     parameters: vec![
                         Type::Constant {
+                            span: Span::new("fn move(card, zone) -> zone"),
                             name: N::Card,
                             parameters: vec![],
                         },
                         Type::Constant {
+                            span: Span::new("fn move(card, zone) -> zone"),
                             name: N::Zone,
                             parameters: vec![],
                         },
                         Type::Constant {
+                            span: Span::new("fn move(card, zone) -> zone"),
                             name: N::Zone,
                             parameters: vec![],
                         }
@@ -264,22 +274,25 @@ lazy_static! {
             "print" => TypeScheme {
                 type_variables: maplit::hashset![TypeVariable::new(0)],
                 ty: Type::Constant {
+                    span: Span::new("fn print<T>(T) -> T"),
                     name: N::Fn,
                     parameters: vec![
-                        Type::Var(TypeVariable::new(0)),
-                        Type::Var(TypeVariable::new(0)),
+                        Type::Var(TypeVariable::new(0), Span::new("T")),
+                        Type::Var(TypeVariable::new(0), Span::new("T")),
                     ],
                 }
             },
             "some" => TypeScheme {
                 type_variables: maplit::hashset![TypeVariable::new(0)],
                 ty: Type::Constant {
+                    span: Span::new("fn some<T>(T) -> T"),
                     name: N::Fn,
                     parameters: vec![
-                        Type::Var(TypeVariable::new(0)),
+                        Type::Var(TypeVariable::new(0), Span::new("T")),
                         Type::Constant {
+                            span: Span::new("T?"),
                             name: N::Option,
-                            parameters: vec![Type::Var(TypeVariable::new(0))],
+                            parameters: vec![Type::Var(TypeVariable::new(0), Span::new("T"))],
                         }
                     ],
                 }

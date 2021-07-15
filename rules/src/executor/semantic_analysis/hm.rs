@@ -2,7 +2,7 @@ use std::{collections::HashSet, iter::once};
 
 use crate::{
     executor::{
-        error::CompileError,
+        error::{CompileError, TypeError},
         semantic_analysis::hm::{
             substitution::Substitution,
             type_environment::TypeEnvironment,
@@ -37,13 +37,14 @@ enum TypeTree<'a> {
     },
     Binding {
         name: &'a str,
+        span: Span<'a>,
     },
-    Leaf(Type),
+    Leaf(Type<'a>),
 }
 
 impl<'a> TypeTree<'a> {
     #[allow(dead_code)]
-    fn apply(&mut self, rules: &Substitution) {
+    fn apply(&mut self, rules: &Substitution<'a>) {
         match self {
             TypeTree::Call { children, .. } => {
                 for child in children {
@@ -74,46 +75,84 @@ impl Fresh {
         TypeVariable::new(ret)
     }
 }
-fn unify(lhs: Type, rhs: Type, span: Span) -> Result<Substitution, CompileError> {
+fn unify<'a>(lhs: Type<'a>, rhs: Type<'a>) -> Result<Substitution<'a>, TypeError<'a>> {
     match (&lhs, &rhs) {
         (
             Type::Constant {
                 name: lhs_name,
                 parameters: lhs_params,
+                span: lhs_span,
             },
             Type::Constant {
                 name: rhs_name,
                 parameters: rhs_params,
+                span: rhs_span,
             },
         ) => {
-            let mut failed = false;
+            let mut err = None;
 
-            if lhs_name != rhs_name {
-                failed = true;
+            if lhs_name != rhs_name || lhs_params.len() != rhs_params.len() {
+                err = Some(TypeError::InvalidType {
+                    expected: lhs.clone(),
+                    found: rhs.clone(),
+                    span: *rhs_span,
+                });
             }
             let mut sub = Substitution::default();
 
             for (left, right) in lhs_params.iter().zip(rhs_params.iter()) {
-                match unify(left.apply(&sub), right.apply(&sub), span) {
+                match unify(left.apply(&sub), right.apply(&sub)) {
                     Ok(applied) => sub = sub.union(applied),
                     Err(_) => {
-                        failed = true;
+                        let span = *right.span();
+
+                        err = Some(TypeError::InvalidType {
+                            expected: left.clone(),
+                            found: right.clone(),
+                            span,
+                        });
                     }
                 }
             }
-            if failed {
-                Err(CompileError::InvalidHMType {
-                    expected: lhs.apply(&sub),
-                    found: rhs.apply(&sub),
-                    value: span.data,
-                })
+            if let Some(err) = err {
+                match err {
+                    TypeError::InvalidType {
+                        expected,
+                        found,
+                        span,
+                    } => Err(TypeError::InvalidType {
+                        expected: expected.apply(&sub),
+                        found: found.apply(&sub),
+                        span,
+                    }),
+                    err => Err(err),
+                }
             } else {
                 Ok(sub)
             }
         }
-        (any, Type::Var(tvar)) | (Type::Var(tvar), any) => {
-            if any == &Type::Var(*tvar) {
-                Ok(Substitution::default())
+        (Type::Var(tvar, span), rhs @ Type::Var(rhs_tvar, ..)) => {
+            if tvar == rhs_tvar {
+                Err(TypeError::InfiniteType {
+                    left: Type::Var(*tvar, *span),
+                    right: rhs.clone(),
+                    span: *span,
+                })
+            } else {
+                Ok(Substitution {
+                    map: maplit::hashmap! {
+                        *tvar => rhs.clone()
+                    },
+                })
+            }
+        }
+        (any, Type::Var(tvar, span)) | (Type::Var(tvar, span), any) => {
+            if any.occurs(tvar) {
+                Err(TypeError::InfiniteType {
+                    left: Type::Var(*tvar, *span),
+                    right: any.clone(),
+                    span: *span,
+                })
             } else {
                 Ok(Substitution {
                     map: maplit::hashmap! {
@@ -129,10 +168,10 @@ fn infer<'a>(
     env: &TypeEnvironment<'a>,
     fresh: &mut Fresh,
     tt: &TypeTree<'a>,
-) -> Result<(Substitution, Type), CompileError<'a>> {
+) -> Result<(Substitution<'a>, Type<'a>), TypeError<'a>> {
     match tt {
         TypeTree::Call { children, span, .. } => {
-            let fresh_type_variable = Type::Var(fresh.next());
+            let fresh_type_variable = Type::Var(fresh.next(), *span);
 
             let (mut sub, fn_type) = infer(env, fresh, &children[0])?;
 
@@ -150,10 +189,10 @@ fn infer<'a>(
             let unified = unify(
                 fn_type,
                 Type::Constant {
+                    span: *span,
                     name: TypeName::Fn,
                     parameters: types,
                 },
-                *span,
             )?;
 
             let ty = fresh_type_variable.apply(&unified);
@@ -162,7 +201,7 @@ fn infer<'a>(
         }
         TypeTree::Let { bindings, expr, .. } => {
             let mut sub = Substitution::default();
-            let mut env = env.apply(&sub);
+            let mut env = env.clone();
 
             for (name, value) in bindings {
                 let (new_sub, value) = infer(&mut env, fresh, value)?;
@@ -176,17 +215,22 @@ fn infer<'a>(
 
             Ok((sub.union(expr.0), expr.1))
         }
-        TypeTree::Binding { name } => Ok((Substitution::default(), {
-            env.map.get(*name).unwrap().new_vars(fresh)
+        TypeTree::Binding { name, span } => Ok((Substitution::default(), {
+            env.map.get(*name).unwrap().new_vars(fresh).with_span(*span)
         })),
         TypeTree::Leaf(ty) => Ok((Substitution::default(), ty.clone())),
-        TypeTree::Fn { bindings, expr, .. } => {
-            let mut env = env.apply(&Substitution::default());
+        TypeTree::Fn {
+            bindings,
+            expr,
+            span,
+            ..
+        } => {
+            let mut env = env.clone();
 
             let parameters = bindings
                 .iter()
                 .map(|binding| {
-                    let var = Type::Var(fresh.next());
+                    let var = Type::Var(fresh.next(), *span);
                     env.map.insert(
                         binding,
                         TypeScheme {
@@ -209,6 +253,7 @@ fn infer<'a>(
             Ok((
                 sub,
                 Type::Constant {
+                    span: *span,
                     name: TypeName::Fn,
                     parameters,
                 },
@@ -220,37 +265,48 @@ fn infer<'a>(
 fn build_type_tree<'a>(sexpr: &SexprValue<'a>, fresh: &mut Fresh) -> TypeTree<'a> {
     match sexpr {
         SexprValue::Sexpr(inner) => TypeTree::Call {
-            children: vec![TypeTree::Binding { name: inner.target }]
-                .into_iter()
-                .chain(
-                    inner
-                        .arguments
-                        .iter()
-                        .map(|arg| build_type_tree(arg, fresh)),
-                )
-                .collect(),
+            children: vec![TypeTree::Binding {
+                name: inner.target,
+                span: inner.span,
+            }]
+            .into_iter()
+            .chain(
+                inner
+                    .arguments
+                    .iter()
+                    .map(|arg| build_type_tree(arg, fresh)),
+            )
+            .collect(),
             span: inner.span,
         },
-        SexprValue::Symbol(binding) => TypeTree::Binding { name: *binding },
-        SexprValue::Integer(_) => TypeTree::Leaf(Type::Constant {
+        SexprValue::Symbol(binding, span) => TypeTree::Binding {
+            name: *binding,
+            span: *span,
+        },
+        SexprValue::Integer(_, span) => TypeTree::Leaf(Type::Constant {
+            span: *span,
             name: TypeName::Integer,
             parameters: vec![],
         }),
-        SexprValue::Bool(_) => TypeTree::Leaf(Type::Constant {
+        SexprValue::Bool(_, span) => TypeTree::Leaf(Type::Constant {
+            span: *span,
             name: TypeName::Bool,
             parameters: vec![],
         }),
-        SexprValue::Zone(_) => TypeTree::Leaf(Type::Constant {
+        SexprValue::Zone(_, span) => TypeTree::Leaf(Type::Constant {
+            span: *span,
             name: TypeName::Zone,
             parameters: vec![],
         }),
-        SexprValue::Unit(_) => TypeTree::Leaf(Type::Constant {
+        SexprValue::Unit(span) => TypeTree::Leaf(Type::Constant {
+            span: *span,
             name: TypeName::Unit,
             parameters: vec![],
         }),
-        SexprValue::None => TypeTree::Leaf(Type::Constant {
+        SexprValue::None(span) => TypeTree::Leaf(Type::Constant {
+            span: *span,
             name: TypeName::Option,
-            parameters: vec![Type::Var(fresh.next())],
+            parameters: vec![Type::Var(fresh.next(), *span)],
         }),
         SexprValue::Array { .. } => todo!(),
         SexprValue::Fn {
@@ -271,7 +327,10 @@ fn build_type_tree<'a>(sexpr: &SexprValue<'a>, fresh: &mut Fresh) -> TypeTree<'a
             ..
         } => TypeTree::Call {
             children: vec![
-                TypeTree::Binding { name: "if" },
+                TypeTree::Binding {
+                    name: "if",
+                    span: *span,
+                },
                 build_type_tree(condition, fresh),
                 build_type_tree(if_true, fresh),
                 build_type_tree(if_false, fresh),
@@ -294,20 +353,22 @@ fn build_type_tree<'a>(sexpr: &SexprValue<'a>, fresh: &mut Fresh) -> TypeTree<'a
     }
 }
 
-pub fn type_check<'a>(ast: &'a SexprValue) -> Result<Type, CompileError<'a>> {
+pub fn type_check<'a>(ast: &'a SexprValue) -> Result<Type<'a>, TypeError<'a>> {
     let mut fresh = Fresh::default();
     let mut env = TypeEnvironment::default();
 
     let idx = fresh.next();
-    let s_var = Type::Var(idx);
+    let s_var = Type::Var(idx, Span::new("if"));
     env.map.insert(
         "if",
         TypeScheme {
             type_variables: maplit::hashset! { idx },
             ty: Type::Constant {
+                span: Span::new("if"),
                 name: TypeName::Fn,
                 parameters: vec![
                     Type::Constant {
+                        span: Span::new("bool"),
                         name: TypeName::Bool,
                         parameters: vec![],
                     },
@@ -324,7 +385,16 @@ pub fn type_check<'a>(ast: &'a SexprValue) -> Result<Type, CompileError<'a>> {
 
     let data = build_type_tree(ast, &mut fresh);
 
-    let (_, ty) = infer(&env, &mut fresh, &data)?;
+    let (_sub, ty) = infer(&env, &mut fresh, &data)?;
 
-    Ok(ty)
+    let mut data = data;
+    data.apply(&_sub);
+    dbg!(&ty);
+    // dbg!(_sub);
+    // dbg!(data);
+    if !ty.is_concrete() {
+        Err(TypeError::UninferredType { ty })
+    } else {
+        Ok(ty)
+    }
 }

@@ -1,6 +1,6 @@
 use std::{collections::HashSet, fmt::Display};
 
-use crate::executor::semantic_analysis::hm::substitution::Substitution;
+use crate::{executor::semantic_analysis::hm::substitution::Substitution, parsing::Span};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TypeVariable(usize);
@@ -39,18 +39,21 @@ impl Display for TypeName {
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub enum Type {
+pub enum Type<'a> {
     Constant {
         name: TypeName,
-        parameters: Vec<Type>,
+        parameters: Vec<Type<'a>>,
+        span: Span<'a>,
     },
-    Var(TypeVariable),
+    Var(TypeVariable, Span<'a>),
 }
 
-impl Display for Type {
+impl<'a> Display for Type<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Type::Constant { name, parameters } => match name {
+            Type::Constant {
+                name, parameters, ..
+            } => match name {
                 TypeName::Fn => write!(
                     f,
                     "fn({}) -> {}",
@@ -84,12 +87,27 @@ impl Display for Type {
                     write!(f, "{}", name)
                 }
             },
-            Type::Var(var) => write!(f, "@{}", var.0),
+            Type::Var(var, ..) => write!(f, "@{}", var.0),
         }
     }
 }
 
-impl Type {
+impl<'a> Type<'a> {
+    pub fn is_concrete(&self) -> bool {
+        match self {
+            Type::Constant { parameters, .. } => parameters.iter().all(|child| child.is_concrete()),
+            Type::Var(_, _) => false,
+        }
+    }
+
+    pub fn occurs(&self, type_var: &TypeVariable) -> bool {
+        match self {
+            Type::Constant { parameters, .. } => {
+                parameters.iter().any(|item| item.occurs(type_var))
+            }
+            Type::Var(x, ..) => x == type_var,
+        }
+    }
     pub fn argument_count(&self) -> Option<usize> {
         if let Type::Constant {
             name: TypeName::Fn,
@@ -108,31 +126,59 @@ impl Type {
                 .iter()
                 .flat_map(|item| item.free_variables())
                 .collect(),
-            Type::Var(idx) => maplit::hashset! { *idx },
+            Type::Var(idx, ..) => maplit::hashset! { *idx },
+        }
+    }
+    pub fn span(&self) -> &Span<'a> {
+        match self {
+            Type::Constant { span, .. } => span,
+            Type::Var(_, span) => span,
+        }
+    }
+    pub fn with_span(self, span: Span<'a>) -> Type<'a> {
+        match self {
+            Type::Constant {
+                name, parameters, ..
+            } => Type::Constant {
+                name,
+                parameters,
+                span,
+            },
+            Type::Var(var, _) => Type::Var(var, span),
         }
     }
 
     pub fn instantiate(self, left: TypeVariable, right: TypeVariable) -> Self {
         match self {
-            Type::Constant { name, parameters } => Type::Constant {
+            Type::Constant {
+                name,
+                parameters,
+                span,
+            } => Type::Constant {
                 name: name,
                 parameters: parameters
                     .into_iter()
                     .map(|ty| ty.instantiate(left, right))
                     .collect(),
+                span,
             },
-            Type::Var(v) if left == v => Type::Var(right),
+            Type::Var(v, span) if left == v => Type::Var(right, span),
             value => value,
         }
     }
 
-    pub fn apply(&self, rules: &Substitution) -> Self {
+    pub fn apply(&self, rules: &Substitution<'a>) -> Self {
         match self {
-            Type::Constant { name, parameters } => Type::Constant {
+            Type::Constant {
+                name,
+                parameters,
+                span,
+            } => Type::Constant {
                 name: *name,
                 parameters: parameters.iter().map(|ty| ty.apply(rules)).collect(),
+                span: *span,
             },
-            Type::Var(v) => rules.map.get(v).cloned().unwrap_or(Type::Var(*v)),
+            Type::Var(v, span) => rules.map.get(v).cloned().unwrap_or(Type::Var(*v, *span)),
         }
     }
 }

@@ -1,17 +1,20 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::executor::semantic_analysis::hm::{
-    substitution::Substitution,
-    types::{Type, TypeVariable},
-    Fresh,
+use crate::{
+    executor::semantic_analysis::hm::{
+        substitution::Substitution,
+        types::{Type, TypeVariable},
+        Fresh,
+    },
+    parsing::Span,
 };
 
 #[derive(Clone, Debug)]
-pub struct TypeScheme {
-    pub ty: Type,
+pub struct TypeScheme<'a> {
+    pub ty: Type<'a>,
     pub type_variables: HashSet<TypeVariable>,
 }
-impl TypeScheme {
+impl<'a> TypeScheme<'a> {
     pub fn free_variables(&self) -> HashSet<TypeVariable> {
         self.ty
             .free_variables()
@@ -19,7 +22,7 @@ impl TypeScheme {
             .copied()
             .collect()
     }
-    pub fn apply(&self, rules: &Substitution) -> Self {
+    pub fn apply(&self, rules: &Substitution<'a>) -> Self {
         let mut rules = rules.clone();
         rules
             .map
@@ -31,7 +34,7 @@ impl TypeScheme {
         }
     }
 
-    pub fn new_vars(&self, fresh: &mut Fresh) -> Type {
+    pub fn new_vars(&self, fresh: &mut Fresh) -> Type<'a> {
         self.type_variables
             .iter()
             .fold(self.ty.clone(), |acc, elem| {

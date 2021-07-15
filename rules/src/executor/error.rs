@@ -3,51 +3,58 @@ use crate::{
         semantic_analysis::hm::types::Type,
         value::{Value, ValueType},
     },
-    parsing::SexprValue,
+    parsing::{SexprValue, Span},
 };
 use thiserror::Error;
 
 #[derive(Debug, Error, PartialEq, Eq)]
-pub enum CompileError<'a> {
-    #[error("expected an s-expr, found: {0:?}")]
-    ExpectedSexpr(&'a SexprValue<'a>),
-    #[error("invalid argument count for {target}, expected {expected}, found {found}")]
-    InvalidArgumentAmount {
-        target: &'a str,
-        expected: usize,
-        found: usize,
-    },
-    #[error("invalid symbol: {0}")]
-    InvalidSymbol(&'a str),
-    #[error("invalid fn: {0}")]
-    InvalidFn(&'a str),
-    #[error("invalid type for {target}, expected {expected}, found {found}: \"{value}\"")]
-    InvalidType {
-        target: &'a str,
-        expected: ValueType,
-        found: ValueType,
-        value: &'a SexprValue<'a>,
-    },
-    #[error("invalid fn {target}, found {found}")]
-    InvalidFnType { target: &'a str, found: ValueType },
-    #[error("invalid condition for 'if', expected bool, found {found}: \"{value}\"")]
-    InvalidCondition {
-        found: ValueType,
-        value: &'a SexprValue<'a>,
-    },
-    #[error("incompatible types for 'if', true branch returns {true_type}, but false returns {false_type}, \"{value}\"")]
-    IncompatibleTypes {
-        true_type: ValueType,
-        false_type: ValueType,
-        value: &'a SexprValue<'a>,
-    },
+pub enum SymbolError<'a> {
+    #[error("invalid symbol: {name} at line {}, col {}", .span.location_line(), .span.get_utf8_column())]
+    InvalidSymbol { name: &'a str, span: Span<'a> },
+    #[error("invalid fn: {name}  at line {}, col {}", .span.location_line(), .span.get_utf8_column())]
+    InvalidFn { name: &'a str, span: Span<'a> },
+}
 
-    #[error("invalid type: expected {expected}, found {found}: \"{value}\"")]
-    InvalidHMType {
-        expected: Type,
-        found: Type,
-        value: &'a str,
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum CompileError<'a> {
+    #[error("{0}")]
+    Symbol(SymbolError<'a>),
+    #[error("{0}")]
+    Type(TypeError<'a>),
+}
+
+impl<'a> From<SymbolError<'a>> for CompileError<'a> {
+    fn from(inner: SymbolError<'a>) -> Self {
+        Self::Symbol(inner)
+    }
+}
+
+impl<'a> From<TypeError<'a>> for CompileError<'a> {
+    fn from(inner: TypeError<'a>) -> Self {
+        Self::Type(inner)
+    }
+}
+
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum TypeError<'a> {
+    #[error("error: invalid type\ncode:{}:{}\n\texpected: {expected}\n\tfound: {found} ", .span.location_line(), .span.get_utf8_column())]
+    InvalidType {
+        expected: Type<'a>,
+        found: Type<'a>,
+        span: Span<'a>,
     },
+    #[error("error: infinite type\ncode:{}:{}\n\t'{left}' <- '{right}'", .span.location_line(), .span.get_utf8_column())]
+    InfiniteType {
+        left: Type<'a>,
+        right: Type<'a>,
+        span: Span<'a>,
+    },
+    #[error("error: ambiguous type\ncode:{}:{}\n\t{ty}\n\t{}",
+        .ty.span().location_line(), 
+        .ty.span().get_utf8_column(), 
+        .ty.span().fragment()
+    )]
+    UninferredType { ty: Type<'a> },
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]

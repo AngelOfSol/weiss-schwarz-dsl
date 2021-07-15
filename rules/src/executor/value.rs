@@ -94,11 +94,11 @@ impl<'a> TryFrom<SexprValue<'a>> for Value {
 
     fn try_from(value: SexprValue<'a>) -> Result<Self, Self::Error> {
         match value {
-            SexprValue::Integer(integer) => Ok(Value::Integer(integer)),
-            SexprValue::Zone(zone) => Ok(Value::Zone(zone)),
-            SexprValue::Unit(()) => Ok(Value::Unit(())),
-            SexprValue::Bool(value) => Ok(Value::Bool(value)),
-            SexprValue::None => Ok(Value::None),
+            SexprValue::Integer(integer, ..) => Ok(Value::Integer(integer)),
+            SexprValue::Zone(zone, ..) => Ok(Value::Zone(zone)),
+            SexprValue::Unit(..) => Ok(Value::Unit(())),
+            SexprValue::Bool(value, ..) => Ok(Value::Bool(value)),
+            SexprValue::None(..) => Ok(Value::None),
             x @ SexprValue::Array { .. }
             | x @ SexprValue::Symbol(_, ..)
             | x @ SexprValue::Let { .. }

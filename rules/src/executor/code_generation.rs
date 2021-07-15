@@ -102,11 +102,11 @@ fn generate_internal(ast: SexprValue<'_>, symbols: &mut SymbolTable) -> Vec<Labe
                 .chain(once(LabeledBytecode::load(Value::ArrayLength(len))))
                 .collect::<Vec<_>>()
         }
-        rest @ SexprValue::None
-        | rest @ SexprValue::Zone(_)
-        | rest @ SexprValue::Bool(_)
-        | rest @ SexprValue::Unit(_)
-        | rest @ SexprValue::Integer(_) => vec![LabeledBytecode::load(rest.try_into().unwrap())],
+        rest @ SexprValue::None(..)
+        | rest @ SexprValue::Zone(..)
+        | rest @ SexprValue::Bool(..)
+        | rest @ SexprValue::Unit(..)
+        | rest @ SexprValue::Integer(..) => vec![LabeledBytecode::load(rest.try_into().unwrap())],
         SexprValue::Fn {
             eval, arguments, ..
         } => {

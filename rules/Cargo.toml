@@ -14,3 +14,4 @@ serde = {version = "1.0.126", features = ["derive"]}
 slab = "0.4.3"
 strum = {version = "0.21.0", features = ["derive"]}
 thiserror = "1.0.25"
+nom_locate = "3.0.1"

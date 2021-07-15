@@ -10,16 +10,14 @@ use nom::{
     sequence::{delimited, pair, preceded, tuple},
     IResult,
 };
+use nom_locate::{position, LocatedSpan};
 
 use crate::executor::{value::ValueType, FnTypeInfo};
 use crate::model::ZoneId;
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub struct Span<'a> {
-    pub data: &'a str,
-}
+pub type Span<'a> = LocatedSpan<&'a str>;
 
-pub fn parse_sexpr(input: &str) -> IResult<&str, Sexpr> {
+pub fn parse_sexpr(input: Span) -> IResult<Span, Sexpr> {
     map(
         consumed(delimited(
             lexing::open,
@@ -33,12 +31,12 @@ pub fn parse_sexpr(input: &str) -> IResult<&str, Sexpr> {
         |(span, (symbol, arguments, _))| Sexpr {
             target: symbol,
             arguments,
-            span: Span { data: span },
+            span: span,
         },
     )(input)
 }
 
-pub fn parse_array(input: &str) -> IResult<&str, SexprValue> {
+pub fn parse_array(input: Span) -> IResult<Span, SexprValue> {
     map(
         consumed(delimited(
             lexing::open_array,
@@ -51,15 +49,12 @@ pub fn parse_array(input: &str) -> IResult<&str, SexprValue> {
         )),
         |(span, (first, mut rest, _))| {
             rest.insert(0, first);
-            SexprValue::Array {
-                values: rest,
-                span: Span { data: span },
-            }
+            SexprValue::Array { values: rest, span }
         },
     )(input)
 }
 
-pub fn parse_let(input: &str) -> IResult<&str, SexprValue> {
+pub fn parse_let(input: Span) -> IResult<Span, SexprValue> {
     map(
         consumed(delimited(
             lexing::open,
@@ -85,12 +80,12 @@ pub fn parse_let(input: &str) -> IResult<&str, SexprValue> {
         |(span, (_, _, bindings, expr))| SexprValue::Let {
             bindings,
             expr: Box::new(expr),
-            span: Span { data: span },
+            span,
         },
     )(input)
 }
 
-pub fn parse_fn(input: &str) -> IResult<&str, SexprValue> {
+pub fn parse_fn(input: Span) -> IResult<Span, SexprValue> {
     map(
         consumed(delimited(
             lexing::open,
@@ -131,12 +126,12 @@ pub fn parse_fn(input: &str) -> IResult<&str, SexprValue> {
             arguments: arguments,
             return_type: return_type.unwrap_or(ValueType::Inferred),
             eval: Box::new(eval),
-            span: Span { data: span },
+            span,
         },
     )(input)
 }
 
-pub fn parse_type(input: &str) -> IResult<&str, ValueType> {
+pub fn parse_type(input: Span) -> IResult<Span, ValueType> {
     alt((
         map(preceded(tag("?"), parse_type), |inner| {
             ValueType::Option(Box::new(inner))
@@ -165,7 +160,7 @@ pub fn parse_type(input: &str) -> IResult<&str, ValueType> {
     ))(input)
 }
 
-pub fn parse_if(input: &str) -> IResult<&str, SexprValue> {
+pub fn parse_if(input: Span) -> IResult<Span, SexprValue> {
     map(
         consumed(delimited(
             lexing::open,
@@ -181,13 +176,13 @@ pub fn parse_if(input: &str) -> IResult<&str, SexprValue> {
         |(span, (_, condition, if_true, if_false, _))| SexprValue::If {
             condition: Box::new(condition),
             if_true: Box::new(if_true),
-            if_false: Box::new(if_false.unwrap_or(SexprValue::Unit(()))),
-            span: Span { data: span },
+            if_false: Box::new(if_false.unwrap_or(SexprValue::Unit(span))),
+            span,
         },
     )(input)
 }
 
-pub fn parse_sexpr_value(input: &str) -> IResult<&str, SexprValue> {
+pub fn parse_sexpr_value(input: Span) -> IResult<Span, SexprValue> {
     alt((
         parse_if,
         parse_let,
@@ -204,60 +199,52 @@ pub fn parse_sexpr_value(input: &str) -> IResult<&str, SexprValue> {
     ))(input)
 }
 
-pub fn parse_symbol(input: &str) -> IResult<&str, SexprValue> {
-    map(lexing::identifier, |value| SexprValue::Symbol(value))(input)
+pub fn parse_symbol(input: Span) -> IResult<Span, SexprValue> {
+    map(consumed(lexing::identifier), |(span, value)| {
+        SexprValue::Symbol(value, span)
+    })(input)
 }
-pub fn parse_zone(input: &str) -> IResult<&str, SexprValue> {
-    map_opt(lexing::identifier, |value| {
-        Some(SexprValue::Zone(value.parse().ok()?))
+pub fn parse_zone(input: Span) -> IResult<Span, SexprValue> {
+    map_opt(consumed(lexing::identifier), |(span, value)| {
+        Some(SexprValue::Zone(value.parse().ok()?, span))
     })(input)
 }
 
-pub fn parse_none(input: &str) -> IResult<&str, SexprValue> {
-    value(SexprValue::None, tag("none"))(input)
+pub fn parse_none(input: Span) -> IResult<Span, SexprValue> {
+    map(tag("none"), |span| SexprValue::None(span))(input)
 }
-pub fn parse_bool(input: &str) -> IResult<&str, SexprValue> {
-    alt((
-        value(SexprValue::Bool(true), tag("true")),
-        value(SexprValue::Bool(false), tag("false")),
-    ))(input)
-}
-
-pub fn parse_number_literal(input: &str) -> IResult<&str, SexprValue> {
-    map(lexing::number, SexprValue::Integer)(input)
-}
-
-pub fn parse_unit(input: &str) -> IResult<&str, SexprValue> {
-    value(SexprValue::Unit(()), tuple((lexing::open, lexing::close)))(input)
+pub fn parse_bool(input: Span) -> IResult<Span, SexprValue> {
+    map(
+        alt((
+            consumed(value(true, tag("true"))),
+            consumed(value(false, tag("false"))),
+        )),
+        |(span, value)| SexprValue::Bool(value, span),
+    )(input)
 }
 
-// pub fn parse_ascription(input: &str) -> IResult<&str, SexprValue> {
-//     map(
-//         tuple((
-//             lexing::identifier,
-//             delimited(
-//                 opt(lexing::whitespace),
-//                 lexing::ascribe,
-//                 opt(lexing::whitespace),
-//             ),
-//             lexing::identifier,
-//         )),
-//         |(name, _, ty)| SexprValue::Ascription {
-//             name: name.to_string(),
-//             ty: ty.to_string(),
-//         },
-//     )(input)
-// }
+pub fn parse_number_literal(input: Span) -> IResult<Span, SexprValue> {
+    map(consumed(lexing::number), |(span, value)| {
+        SexprValue::Integer(value, span)
+    })(input)
+}
+
+pub fn parse_unit(input: Span) -> IResult<Span, SexprValue> {
+    map(
+        consumed(tuple((lexing::open, lexing::close))),
+        |(span, _)| SexprValue::Unit(span),
+    )(input)
+}
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum SexprValue<'a> {
     Sexpr(Sexpr<'a>),
-    Symbol(&'a str),
-    Integer(i32),
-    Bool(bool),
-    Zone(ZoneId),
-    Unit(()),
-    None,
+    Symbol(&'a str, Span<'a>),
+    Integer(i32, Span<'a>),
+    Bool(bool, Span<'a>),
+    Zone(ZoneId, Span<'a>),
+    Unit(Span<'a>),
+    None(Span<'a>),
     Array {
         values: Vec<SexprValue<'a>>,
         span: Span<'a>,
@@ -291,7 +278,7 @@ impl<'a> SexprValue<'a> {
     }
 
     pub fn try_into_symbol(self) -> Result<&'a str, Self> {
-        if let Self::Symbol(v) = self {
+        if let Self::Symbol(v, ..) = self {
             Ok(v)
         } else {
             Err(self)
@@ -314,10 +301,11 @@ impl<'a> Display for SexprValue<'a> {
                         .fold(String::new(), |acc, inner| format!("{} {}", acc, inner))
                 )
             }
-            SexprValue::Symbol(inner) => write!(f, "{}", inner),
-            SexprValue::Integer(value) => write!(f, "{}", value),
-            SexprValue::Zone(value) => write!(f, "{}", value),
+            SexprValue::Symbol(inner, ..) => write!(f, "{}", inner),
+            SexprValue::Integer(value, ..) => write!(f, "{}", value),
+            SexprValue::Zone(value, ..) => write!(f, "{}", value),
             SexprValue::Unit(_) => write!(f, "()",),
+            SexprValue::Bool(value, ..) => write!(f, "{}", value),
             SexprValue::Fn {
                 arguments,
                 return_type,
@@ -340,7 +328,6 @@ impl<'a> Display for SexprValue<'a> {
                 if_false,
                 ..
             } => write!(f, "(if {} {} {})", condition, if_true, if_false),
-            SexprValue::Bool(value) => write!(f, "{}", value),
             SexprValue::Let { bindings, expr, .. } => write!(
                 f,
                 "(let ({}) {})",
@@ -362,7 +349,7 @@ impl<'a> Display for SexprValue<'a> {
                         .join(" ")
                 )
             }
-            SexprValue::None => write!(f, "none"),
+            SexprValue::None(..) => write!(f, "none"),
         }
     }
 }
@@ -372,46 +359,4 @@ pub struct Sexpr<'a> {
     pub target: &'a str,
     pub arguments: Vec<SexprValue<'a>>,
     pub span: Span<'a>,
-}
-
-#[cfg(test)]
-mod test {
-    use crate::parsing::{parse_sexpr, Sexpr, SexprValue};
-
-    #[test]
-    fn parse_sexpr_test() {
-        assert_eq!(
-            parse_sexpr("(my-symbol x)"),
-            Ok((
-                "",
-                Sexpr {
-                    target: "my-symbol",
-                    arguments: vec![SexprValue::Symbol("x"),],
-                    span: super::Span {
-                        data: "(my-symbol x)",
-                    }
-                }
-            ))
-        );
-
-        assert_eq!(
-            parse_sexpr("(my-symbol (my-symbol x y))"),
-            Ok((
-                "",
-                Sexpr {
-                    target: "my-symbol",
-                    arguments: vec![SexprValue::Sexpr(Sexpr {
-                        target: "my-symbol",
-                        arguments: vec![SexprValue::Symbol("x"), SexprValue::Symbol("y")],
-                        span: super::Span {
-                            data: "(my-symbol x y)",
-                        }
-                    })],
-                    span: super::Span {
-                        data: "(my-symbol (my-symbol x y))",
-                    }
-                }
-            ))
-        );
-    }
 }

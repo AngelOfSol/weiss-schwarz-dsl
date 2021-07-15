@@ -7,7 +7,7 @@ use rules::{
         ExecutorStack,
     },
     model::{Card, CardId, Game, ZoneId},
-    parsing::parse_sexpr_value,
+    parsing::{parse_sexpr_value, Span},
 };
 use semantic_analysis::semantic_analysis;
 use serde::{Deserialize, Serialize};
@@ -46,7 +46,9 @@ impl DebugUi {
                         });
 
                     if ui.button("Run").clicked() && !self.console_input.is_empty() {
-                        let result = parse_sexpr_value(&self.console_input.clone())
+                        let temp = self.console_input.clone();
+                        let ci = Span::new(&temp);
+                        let result = parse_sexpr_value(ci)
                             .map_err(|err| err.to_string())
                             .and_then(|(_, value)| {
                                 let mut executor = Executor {
@@ -104,10 +106,9 @@ impl DebugUi {
                         write("./saved.w", &bincode::serialize(self).unwrap()).unwrap();
                     };
                 });
-
                 columns[1].vertical(|ui| {
-                    let size = ui.available_size();
-                    ScrollArea::from_max_height(200.0)
+                    let size = ui.available_size_before_wrap_finite();
+                    ScrollArea::auto_sized()
                         .id_source(ui.make_persistent_id("compilation output"))
                         .show(ui, |ui| {
                             ui.add_sized(
@@ -126,14 +127,12 @@ impl DebugUi {
                             .show(ui, |ui| {
                                 for right in self.console_lines.iter() {
                                     ui.separator();
-                                    ui.with_layout(Layout::right_to_left(), |ui| {
-                                        let value = right.as_ref().unwrap_or_else(|v| v);
-                                        if matches!(right, Err(_)) {
-                                            ui.colored_label(Color32::RED, value);
-                                        } else {
-                                            ui.label(value);
-                                        }
-                                    });
+                                    let value = right.as_ref().unwrap_or_else(|v| v);
+                                    if matches!(right, Err(_)) {
+                                        ui.colored_label(Color32::RED, value);
+                                    } else {
+                                        ui.label(value);
+                                    }
                                 }
                                 if scroll {
                                     ui.scroll_to_cursor(egui::Align::Min);
