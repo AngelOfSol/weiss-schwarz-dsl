@@ -1,0 +1,135 @@
+
+top-level patterns are different from normal code
+
+no function name overloading
+
+(symbol args...)
+`x -> (quote x)
+x.y.z[0] -> (index (get (get x y) z) 0)
+// type check the above?
+
+_ -> unbound pattern matcher
+
+(def (fun-name (type variable-name) (type _)))
+
+(filter array (item) (...))
+
+(for-each (x: T in y: [T])
+	(print x)
+)
+(
+	(print "1")
+	(print "2")
+	(print "3")
+)
+==
+(seq
+	(print "1")
+	(print "2")
+	(print "3")
+)
+
+TYPES:
+Binding:
+	Symbol // any symbol
+	_ // placeholder
+Symbol: (string) [notation: (quote symbol) or `symbole]
+Color:
+	Yellow
+	Green
+	Red
+	Blue
+Integer: i32
+Player: [usize index]
+Zone: [enum key mapping] -> (index Zone _) is legal
+Card: (usize, unique card id per card)
+Trait: (string) [notation: (trait symbol) or <trait>]
+Option<T>: [notation: (none) or (some value)]
+	(if-some value (fn[T]))
+TapState:
+	Stand
+	Rest
+	Reverse
+Function: (list of types + bindings)
+Phase: 
+	Stand
+	Draw
+	Clock
+	Main
+	Climax
+	Attack
+	Encore
+	End
+
+SubPhase
+	Declare
+	Trigger
+	Counter
+	Damage
+	Reverse
+ZoneSide
+	Top
+	Bottom
+Slot
+	FrontLeft
+	FrontCenter
+	FrontRight
+	BackLeft
+	BackRight
+[plus functions to determine cards from X]
+
+[T]: Array of T of the same type
+
+active -> returns Player
+active.hand -> returns Zone
+(top active.hand 2) -> returns [Card]
+card.level -> Integer
+card.color -> Color
+card.soul -> Integer
+card.tap-state -> TapState
+card.traits -> [Trait]
+
+stage. {front-left, front-center, front-right, back-left, back-right}
+
+
+ask mason about opinions on dealing with scoping issues vs lambdas
+
+maybe just go functional style?
+this might work best because functions have arguments?
+consider tuple types?
+(let (x 5)
+	(print x)
+)
+
+x.y -> (get y x)
+
+(trigger move
+	(card: Card to: Zone) -> (from: Zone)
+	(if 
+		(and
+			(eq card.owner (opponent self.owner))
+			(eq from.zone clock)
+			(eq to.zone waiting-room)
+		)
+		(let cost (match
+				(choice [`yes, `no] card.owner)
+				(`yes 
+					(repeat 2 
+						(move (top-of card.owner.stock) waiting-room)
+					)
+				)
+				(`no [])
+			)
+			(if (neq 2 (len cost))
+				(move (top-of card.owner.deck) clock)
+			)
+		)
+	)
+)
+
+(move card zone) -> zone
+
+
+
+change code gen so that anonymous functions get inlined?, but defines don't
+still need to figure out how to pass a fn to a rust function and have it run
