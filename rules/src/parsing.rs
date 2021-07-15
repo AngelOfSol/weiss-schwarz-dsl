@@ -17,7 +17,7 @@ use crate::{executor::semantic_analysis::hm::types::TypeVariable, model::ZoneId}
 
 pub type Span<'a> = LocatedSpan<&'a str>;
 
-pub fn parse_sexpr(input: Span) -> IResult<Span, Sexpr> {
+pub fn parse_sexpr(input: Span) -> IResult<Span, SexprValue> {
     map(
         consumed(delimited(
             lexing::open,
@@ -28,7 +28,7 @@ pub fn parse_sexpr(input: Span) -> IResult<Span, Sexpr> {
             )),
             lexing::close,
         )),
-        |(span, (symbol, arguments, _))| Sexpr {
+        |(span, (symbol, arguments, _))| SexprValue::Sexpr {
             target: symbol,
             arguments,
             span: span,
@@ -250,7 +250,7 @@ pub fn parse_sexpr_value(input: Span) -> IResult<Span, SexprValue> {
         parse_array,
         // parse_symbol must be second to last
         parse_symbol,
-        map(parse_sexpr, SexprValue::Sexpr),
+        parse_sexpr,
     ))(input)
 }
 
@@ -293,7 +293,11 @@ pub fn parse_unit(input: Span) -> IResult<Span, SexprValue> {
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum SexprValue<'a> {
-    Sexpr(Sexpr<'a>),
+    Sexpr {
+        target: &'a str,
+        arguments: Vec<SexprValue<'a>>,
+        span: Span<'a>,
+    },
     Symbol(&'a str, Span<'a>),
     Integer(i32, Span<'a>),
     Bool(bool, Span<'a>),
@@ -324,14 +328,6 @@ pub enum SexprValue<'a> {
 }
 
 impl<'a> SexprValue<'a> {
-    pub fn try_into_sexpr(self) -> Result<Sexpr<'a>, Self> {
-        if let Self::Sexpr(v) = self {
-            Ok(v)
-        } else {
-            Err(self)
-        }
-    }
-
     pub fn try_into_symbol(self) -> Result<&'a str, Self> {
         if let Self::Symbol(v, ..) = self {
             Ok(v)
@@ -344,9 +340,9 @@ impl<'a> SexprValue<'a> {
 impl<'a> Display for SexprValue<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SexprValue::Sexpr(Sexpr {
+            SexprValue::Sexpr {
                 target, arguments, ..
-            }) => {
+            } => {
                 write!(
                     f,
                     "({} {})",
@@ -409,9 +405,30 @@ impl<'a> Display for SexprValue<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub struct Sexpr<'a> {
-    pub target: &'a str,
-    pub arguments: Vec<SexprValue<'a>>,
+#[derive(Debug, Clone)]
+pub struct ExternDeclaration<'a> {
+    pub name: &'a str,
+    pub(crate) type_scheme: TypeScheme<'a>,
     pub span: Span<'a>,
+}
+
+pub fn parse_extern(input: Span) -> IResult<Span, ExternDeclaration> {
+    map(
+        consumed(delimited(
+            lexing::open,
+            preceded(
+                pair(tag("extern"), lexing::whitespace),
+                pair(
+                    lexing::identifier,
+                    preceded(lexing::whitespace, parse_type_scheme),
+                ),
+            ),
+            lexing::close,
+        )),
+        |(span, (name, type_scheme))| ExternDeclaration {
+            name,
+            type_scheme,
+            span,
+        },
+    )(input)
 }

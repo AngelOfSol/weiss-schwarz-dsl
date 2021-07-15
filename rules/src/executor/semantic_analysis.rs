@@ -9,7 +9,7 @@ use crate::{
         semantic_analysis::symbol_validity::check_symbol_validity,
         Executor, RUST_FN_TYPE_SCHEMES,
     },
-    parsing::{Sexpr, SexprValue},
+    parsing::SexprValue,
 };
 
 pub type SymbolTable<'a> = HashSet<&'a str>;
@@ -20,18 +20,22 @@ trait VerifySexpr {
         I: Iterator<Item = &'a str> + 'b;
 }
 
-impl<'sexpr> VerifySexpr for Sexpr<'sexpr> {
+impl<'sexpr> VerifySexpr for SexprValue<'sexpr> {
     fn valid_target<'a, 'b, I>(&'a self, mut targets: I) -> Result<(), SymbolError<'a>>
     where
         I: Iterator<Item = &'a str> + 'b,
     {
-        if targets.any(|item| item == self.target) {
-            Ok(())
+        if let SexprValue::Sexpr { target, span, .. } = self {
+            if targets.any(|item| item == *target) {
+                Ok(())
+            } else {
+                Err(SymbolError::InvalidFn {
+                    name: target,
+                    span: *span,
+                })
+            }
         } else {
-            Err(SymbolError::InvalidFn {
-                name: self.target,
-                span: self.span,
-            })
+            Ok(())
         }
     }
 }

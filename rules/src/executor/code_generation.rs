@@ -67,19 +67,23 @@ impl SymbolTable {
 
 fn generate_internal(ast: SexprValue<'_>, symbols: &mut SymbolTable) -> Vec<LabeledBytecode> {
     match ast {
-        SexprValue::Sexpr(mut sexpr) => match sexpr.target {
+        SexprValue::Sexpr {
+            target,
+            mut arguments,
+            ..
+        } => match target {
             "print" => {
-                let mut res = generate_internal(sexpr.arguments.remove(0), symbols);
+                let mut res = generate_internal(arguments.remove(0), symbols);
                 res.push(LabeledBytecode::print());
                 res
             }
             _ => {
                 let label = symbols
-                    .get_binding(sexpr.target)
+                    .get_binding(target)
                     .map(ToString::to_string)
-                    .unwrap_or(sexpr.target.to_string());
-                sexpr
-                    .arguments
+                    .unwrap_or(target.to_string());
+
+                arguments
                     .into_iter()
                     .rev()
                     .map(|arg| generate_internal(arg, symbols))

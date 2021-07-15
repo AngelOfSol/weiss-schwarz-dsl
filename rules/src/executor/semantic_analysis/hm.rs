@@ -264,20 +264,19 @@ fn infer<'a>(
 
 fn build_type_tree<'a>(sexpr: &SexprValue<'a>, fresh: &mut Fresh) -> TypeTree<'a> {
     match sexpr {
-        SexprValue::Sexpr(inner) => TypeTree::Call {
+        SexprValue::Sexpr {
+            target,
+            span,
+            arguments,
+        } => TypeTree::Call {
             children: vec![TypeTree::Binding {
-                name: inner.target,
-                span: inner.span,
+                name: target,
+                span: *span,
             }]
             .into_iter()
-            .chain(
-                inner
-                    .arguments
-                    .iter()
-                    .map(|arg| build_type_tree(arg, fresh)),
-            )
+            .chain(arguments.iter().map(|arg| build_type_tree(arg, fresh)))
             .collect(),
-            span: inner.span,
+            span: *span,
         },
         SexprValue::Symbol(binding, span) => TypeTree::Binding {
             name: *binding,

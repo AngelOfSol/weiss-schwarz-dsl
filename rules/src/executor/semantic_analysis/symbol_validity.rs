@@ -13,14 +13,20 @@ pub fn check_symbol_validity<'a>(
     _executor: &Executor,
 ) -> Result<(), SymbolError<'a>> {
     match ast {
-        SexprValue::Sexpr(sexpr) => match sexpr.target {
-            "print" => check_symbol_validity(&sexpr.arguments[0], symbols, _executor),
+        s
+        @
+        SexprValue::Sexpr {
+            target,
+            arguments,
+            span,
+        } => match *target {
+            "print" => check_symbol_validity(&arguments[0], symbols, _executor),
             _ => {
-                for argument in sexpr.arguments.iter() {
+                for argument in arguments.iter() {
                     check_symbol_validity(argument, symbols.clone(), _executor)?;
                 }
 
-                sexpr.valid_target(symbols.iter().copied())
+                s.valid_target(symbols.iter().copied())
             }
         },
         SexprValue::Array { values, .. } => {
