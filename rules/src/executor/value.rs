@@ -100,7 +100,7 @@ impl<'a> TryFrom<SexprValue<'a>> for Value {
             SexprValue::Unit(()) => Ok(Value::Unit(())),
             SexprValue::Bool(value) => Ok(Value::Bool(value)),
             SexprValue::None => Ok(Value::None),
-            x @ SexprValue::Array(_)
+            x @ SexprValue::Array { .. }
             | x @ SexprValue::Symbol(_, ..)
             | x @ SexprValue::Let { .. }
             | x @ SexprValue::If { .. }

@@ -93,7 +93,7 @@ fn generate_internal(ast: SexprValue<'_>, symbols: &mut SymbolTable) -> Vec<Labe
                 symbols.get_binding(binding).unwrap().to_string(),
             )]
         }
-        SexprValue::Array(values) => {
+        SexprValue::Array { values, .. } => {
             let len = values.len();
             values
                 .into_iter()

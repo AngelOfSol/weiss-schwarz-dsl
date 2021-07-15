@@ -241,7 +241,7 @@ fn build_type_tree<'a>(sexpr: &SexprValue<'a>, fresh: &mut Fresh) -> TypeTree<'a
             name: TypeName::Option,
             parameters: vec![Type::Var(fresh.next())],
         }),
-        SexprValue::Array(_) => todo!(),
+        SexprValue::Array { .. } => todo!(),
         SexprValue::Fn {
             arguments, eval, ..
         } => TypeTree::Fn {
@@ -252,6 +252,7 @@ fn build_type_tree<'a>(sexpr: &SexprValue<'a>, fresh: &mut Fresh) -> TypeTree<'a
             condition,
             if_true,
             if_false,
+            ..
         } => TypeTree::Call {
             children: vec![
                 TypeTree::Binding { name: "if" },
@@ -260,7 +261,7 @@ fn build_type_tree<'a>(sexpr: &SexprValue<'a>, fresh: &mut Fresh) -> TypeTree<'a
                 build_type_tree(if_false, fresh),
             ],
         },
-        SexprValue::Let { bindings, expr } => TypeTree::Let {
+        SexprValue::Let { bindings, expr, .. } => TypeTree::Let {
             bindings: bindings
                 .iter()
                 .map(|(key, value)| (*key, build_type_tree(value, fresh)))

@@ -5,7 +5,7 @@ use std::fmt::Display;
 use nom::{
     branch::alt,
     bytes::complete::tag,
-    combinator::{map, map_opt, opt, value},
+    combinator::{consumed, map, map_opt, opt, value},
     multi::{many0, many1},
     sequence::{delimited, pair, preceded, tuple},
     IResult,
@@ -14,9 +14,14 @@ use nom::{
 use crate::executor::{value::ValueType, FnTypeInfo};
 use crate::model::ZoneId;
 
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct Span<'a> {
+    data: &'a str,
+}
+
 pub fn parse_sexpr(input: &str) -> IResult<&str, Sexpr> {
     map(
-        delimited(
+        consumed(delimited(
             lexing::open,
             tuple((
                 lexing::identifier,
@@ -24,17 +29,18 @@ pub fn parse_sexpr(input: &str) -> IResult<&str, Sexpr> {
                 opt(lexing::whitespace),
             )),
             lexing::close,
-        ),
-        |(symbol, arguments, _)| Sexpr {
+        )),
+        |(span, (symbol, arguments, _))| Sexpr {
             target: symbol,
             arguments,
+            span: Span { data: span },
         },
     )(input)
 }
 
 pub fn parse_array(input: &str) -> IResult<&str, SexprValue> {
     map(
-        delimited(
+        consumed(delimited(
             lexing::open_array,
             tuple((
                 parse_sexpr_value,
@@ -42,17 +48,20 @@ pub fn parse_array(input: &str) -> IResult<&str, SexprValue> {
                 opt(lexing::whitespace),
             )),
             lexing::close_array,
-        ),
-        |(first, mut rest, _)| {
+        )),
+        |(span, (first, mut rest, _))| {
             rest.insert(0, first);
-            SexprValue::Array(rest)
+            SexprValue::Array {
+                values: rest,
+                span: Span { data: span },
+            }
         },
     )(input)
 }
 
 pub fn parse_let(input: &str) -> IResult<&str, SexprValue> {
     map(
-        delimited(
+        consumed(delimited(
             lexing::open,
             tuple((
                 tag("let"),
@@ -72,17 +81,18 @@ pub fn parse_let(input: &str) -> IResult<&str, SexprValue> {
                 preceded(lexing::whitespace, parse_sexpr_value),
             )),
             lexing::close,
-        ),
-        |(_, _, bindings, expr)| SexprValue::Let {
+        )),
+        |(span, (_, _, bindings, expr))| SexprValue::Let {
             bindings,
             expr: Box::new(expr),
+            span: Span { data: span },
         },
     )(input)
 }
 
 pub fn parse_fn(input: &str) -> IResult<&str, SexprValue> {
     map(
-        delimited(
+        consumed(delimited(
             lexing::open,
             tuple((
                 tag("fn"),
@@ -116,11 +126,12 @@ pub fn parse_fn(input: &str) -> IResult<&str, SexprValue> {
                 preceded(opt(lexing::whitespace), parse_sexpr_value),
             )),
             lexing::close,
-        ),
-        |(_, _, arguments, return_type, eval)| SexprValue::Fn {
+        )),
+        |(span, (_, _, arguments, return_type, eval))| SexprValue::Fn {
             arguments: arguments,
             return_type: return_type.unwrap_or(ValueType::Inferred),
             eval: Box::new(eval),
+            span: Span { data: span },
         },
     )(input)
 }
@@ -156,7 +167,7 @@ pub fn parse_type(input: &str) -> IResult<&str, ValueType> {
 
 pub fn parse_if(input: &str) -> IResult<&str, SexprValue> {
     map(
-        delimited(
+        consumed(delimited(
             lexing::open,
             tuple((
                 tag("if"),
@@ -166,11 +177,12 @@ pub fn parse_if(input: &str) -> IResult<&str, SexprValue> {
                 opt(lexing::whitespace),
             )),
             lexing::close,
-        ),
-        |(_, condition, if_true, if_false, _)| SexprValue::If {
+        )),
+        |(span, (_, condition, if_true, if_false, _))| SexprValue::If {
             condition: Box::new(condition),
             if_true: Box::new(if_true),
             if_false: Box::new(if_false.unwrap_or(SexprValue::Unit(()))),
+            span: Span { data: span },
         },
     )(input)
 }
@@ -246,20 +258,26 @@ pub enum SexprValue<'a> {
     Zone(ZoneId),
     Unit(()),
     None,
-    Array(Vec<SexprValue<'a>>),
+    Array {
+        values: Vec<SexprValue<'a>>,
+        span: Span<'a>,
+    },
     Fn {
         arguments: Vec<(&'a str, ValueType)>,
         return_type: ValueType,
         eval: Box<SexprValue<'a>>,
+        span: Span<'a>,
     },
     If {
         condition: Box<SexprValue<'a>>,
         if_true: Box<SexprValue<'a>>,
         if_false: Box<SexprValue<'a>>,
+        span: Span<'a>,
     },
     Let {
         bindings: Vec<(&'a str, SexprValue<'a>)>,
         expr: Box<SexprValue<'a>>,
+        span: Span<'a>,
     },
 }
 
@@ -284,7 +302,9 @@ impl<'a> SexprValue<'a> {
 impl<'a> Display for SexprValue<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SexprValue::Sexpr(Sexpr { target, arguments }) => {
+            SexprValue::Sexpr(Sexpr {
+                target, arguments, ..
+            }) => {
                 write!(
                     f,
                     "({} {})",
@@ -302,6 +322,7 @@ impl<'a> Display for SexprValue<'a> {
                 arguments,
                 return_type,
                 eval,
+                ..
             } => write!(
                 f,
                 "fn({}) -> {} {{ {} }}",
@@ -317,9 +338,10 @@ impl<'a> Display for SexprValue<'a> {
                 condition,
                 if_true,
                 if_false,
+                ..
             } => write!(f, "(if {} {} {})", condition, if_true, if_false),
             SexprValue::Bool(value) => write!(f, "{}", value),
-            SexprValue::Let { bindings, expr } => write!(
+            SexprValue::Let { bindings, expr, .. } => write!(
                 f,
                 "(let ({}) {})",
                 bindings
@@ -329,7 +351,7 @@ impl<'a> Display for SexprValue<'a> {
                     .join(","),
                 expr
             ),
-            SexprValue::Array(values) => {
+            SexprValue::Array { values, .. } => {
                 write!(
                     f,
                     "[{}]",
@@ -349,6 +371,7 @@ impl<'a> Display for SexprValue<'a> {
 pub struct Sexpr<'a> {
     pub target: &'a str,
     pub arguments: Vec<SexprValue<'a>>,
+    pub span: Span<'a>,
 }
 
 #[cfg(test)]
@@ -363,7 +386,10 @@ mod test {
                 "",
                 Sexpr {
                     target: "my-symbol",
-                    arguments: vec![SexprValue::Symbol("x"),]
+                    arguments: vec![SexprValue::Symbol("x"),],
+                    span: super::Span {
+                        data: "(my-symbol x)",
+                    }
                 }
             ))
         );
@@ -376,8 +402,14 @@ mod test {
                     target: "my-symbol",
                     arguments: vec![SexprValue::Sexpr(Sexpr {
                         target: "my-symbol",
-                        arguments: vec![SexprValue::Symbol("x"), SexprValue::Symbol("y")]
+                        arguments: vec![SexprValue::Symbol("x"), SexprValue::Symbol("y")],
+                        span: super::Span {
+                            data: "(my-symbol x y)",
+                        }
                     })],
+                    span: super::Span {
+                        data: "(my-symbol (my-symbol x y))",
+                    }
                 }
             ))
         );

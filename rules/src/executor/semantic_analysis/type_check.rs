@@ -68,7 +68,7 @@ pub fn type_check<'a>(
         SexprValue::Unit(_) => Ok(ValueType::Unit),
         SexprValue::Bool(_) => Ok(ValueType::Bool),
         SexprValue::None => Ok(ValueType::Option(Box::new(ValueType::Unit))),
-        array @ SexprValue::Array(values) => {
+        array @ SexprValue::Array { values, .. } => {
             let types = values
                 .iter()
                 .map(|inner| type_check(inner, types.clone(), _executor))

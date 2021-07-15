@@ -23,7 +23,7 @@ pub fn check_symbol_validity<'a>(
                 sexpr.valid_target(symbols.iter().copied())
             }
         },
-        SexprValue::Array(values) => {
+        SexprValue::Array { values, .. } => {
             for argument in values.iter() {
                 check_symbol_validity(argument, symbols.clone(), _executor)?;
             }
