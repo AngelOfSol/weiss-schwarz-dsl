@@ -14,9 +14,9 @@ use nom::{
 use crate::executor::{value::ValueType, FnTypeInfo};
 use crate::model::ZoneId;
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Span<'a> {
-    data: &'a str,
+    pub data: &'a str,
 }
 
 pub fn parse_sexpr(input: &str) -> IResult<&str, Sexpr> {

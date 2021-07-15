@@ -6,7 +6,6 @@ use crate::{
     parsing::SexprValue,
 };
 use serde::{Deserialize, Serialize};
-use strum::Display;
 
 pub trait ValueFrom: Sized {
     fn try_from(value: Value) -> Result<Self, RuntimeError>;

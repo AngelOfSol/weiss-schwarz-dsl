@@ -12,6 +12,7 @@ pub struct TypeEnvironment<'a> {
 }
 
 impl<'a> TypeEnvironment<'a> {
+    #[allow(dead_code)]
     pub fn remove(&self, variable: &'a str) -> Self {
         Self {
             map: self

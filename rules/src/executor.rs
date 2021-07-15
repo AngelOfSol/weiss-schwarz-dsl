@@ -5,7 +5,14 @@ pub mod rust_funcs;
 pub mod semantic_analysis;
 pub mod value;
 
-use crate::executor::{bytecode::Bytecode, error::RuntimeError};
+use crate::executor::{
+    bytecode::Bytecode,
+    error::RuntimeError,
+    semantic_analysis::hm::{
+        type_schemes::TypeScheme,
+        types::{Type, TypeVariable},
+    },
+};
 use crate::{
     executor::value::{Value, ValueFrom, ValueType},
     model::Game,
@@ -209,26 +216,75 @@ impl ExecutorStack {
 }
 
 pub type ExecutorFn = fn(&mut Executor, &mut Game) -> Result<(), RuntimeError>;
-
 lazy_static! {
     pub static ref RUST_FN: HashMap<&'static str, ExecutorFn> = hashmap! {
         "card" => rust_funcs::card as ExecutorFn,
         "move" => rust_funcs::move_card as ExecutorFn,
         "some" => rust_funcs::some as ExecutorFn,
     };
-    pub static ref RUST_FN_TYPES: HashMap<&'static str, FnTypeInfo> = hashmap! {
-        "card" => FnTypeInfo {
-            argument_types: vec![ValueType::Integer],
-            return_type: ValueType::CardId,
-        },
-        "move" => FnTypeInfo {
-            argument_types: vec![ValueType::CardId, ValueType::Zone],
-            return_type: ValueType::Zone,
-        },
-        "some" => FnTypeInfo {
-            argument_types: vec![ValueType::Unit],
-            return_type: ValueType::Option(Box::new(ValueType::Unit)),
-        },
+    pub static ref RUST_FN_TYPE_SCHEMES: HashMap<&'static str, TypeScheme> = {
+        use semantic_analysis::hm::types::TypeName as N;
+        hashmap! {
+            "card" => TypeScheme {
+                type_variables: maplit::hashset![],
+                ty: Type::Constant {
+                    name: N::Fn,
+                    parameters: vec![
+                        Type::Constant {
+                            name: N::Integer,
+                            parameters: vec![],
+                        },
+                        Type::Constant {
+                            name: N::Card,
+                            parameters: vec![],
+                        }
+                    ],
+                }
+            },
+            "move" => TypeScheme {
+                type_variables: maplit::hashset![],
+                ty: Type::Constant {
+                    name: N::Fn,
+                    parameters: vec![
+                        Type::Constant {
+                            name: N::Card,
+                            parameters: vec![],
+                        },
+                        Type::Constant {
+                            name: N::Zone,
+                            parameters: vec![],
+                        },
+                        Type::Constant {
+                            name: N::Zone,
+                            parameters: vec![],
+                        }
+                    ],
+                }
+            },
+            "print" => TypeScheme {
+                type_variables: maplit::hashset![TypeVariable::new(0)],
+                ty: Type::Constant {
+                    name: N::Fn,
+                    parameters: vec![
+                        Type::Var(TypeVariable::new(0)),
+                        Type::Var(TypeVariable::new(0)),
+                    ],
+                }
+            },
+            "some" => TypeScheme {
+                type_variables: maplit::hashset![TypeVariable::new(0)],
+                ty: Type::Constant {
+                    name: N::Fn,
+                    parameters: vec![
+                        Type::Var(TypeVariable::new(0)),
+                        Type::Constant {
+                            name: N::Option,
+                            parameters: vec![Type::Var(TypeVariable::new(0))],
+                        }
+                    ],
+                }
+            },
+        }
     };
 }
 

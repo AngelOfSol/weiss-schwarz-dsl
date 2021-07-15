@@ -1,5 +1,8 @@
 use crate::{
-    executor::value::{Value, ValueType},
+    executor::{
+        semantic_analysis::hm::types::Type,
+        value::{Value, ValueType},
+    },
     parsing::SexprValue,
 };
 use thiserror::Error;
@@ -37,6 +40,13 @@ pub enum CompileError<'a> {
         true_type: ValueType,
         false_type: ValueType,
         value: &'a SexprValue<'a>,
+    },
+
+    #[error("invalid type: expected {expected}, found {found}: \"{value}\"")]
+    InvalidHMType {
+        expected: Type,
+        found: Type,
+        value: &'a str,
     },
 }
 
