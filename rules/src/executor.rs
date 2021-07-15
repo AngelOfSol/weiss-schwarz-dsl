@@ -214,6 +214,7 @@ lazy_static! {
         "card" => rust_funcs::card as ExecutorFn,
         "move" => rust_funcs::move_card as ExecutorFn,
         "some" => rust_funcs::some as ExecutorFn,
+        "or_default" => rust_funcs::or_default as ExecutorFn,
     };
 }
 

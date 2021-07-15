@@ -11,6 +11,12 @@ impl TypeVariable {
     }
 }
 
+impl Display for TypeVariable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "@{}", self.0)
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TypeName {
     Integer,
@@ -87,7 +93,7 @@ impl<'a> Display for Type<'a> {
                     write!(f, "{}", name)
                 }
             },
-            Type::Var(var, ..) => write!(f, "@{}", var.0),
+            Type::Var(var, ..) => write!(f, "{}", var),
         }
     }
 }
@@ -167,19 +173,26 @@ impl<'a> Type<'a> {
         }
     }
 
-    pub(crate) fn apply(&self, rules: &Substitution<'a>) -> Self {
+    fn apply_rule(&mut self, left: &TypeVariable, ty: &Type<'a>) {
         match self {
-            Type::Constant {
-                name,
-                parameters,
-                span,
-            } => Type::Constant {
-                name: *name,
-                parameters: parameters.iter().map(|ty| ty.apply(rules)).collect(),
-                span: *span,
-            },
-            Type::Var(v, span) => rules.map.get(v).cloned().unwrap_or(Type::Var(*v, *span)),
+            Type::Constant { parameters, .. } => {
+                for parameter in parameters {
+                    parameter.apply_rule(left, ty);
+                }
+            }
+            Type::Var(v, span) => {
+                if v == left {
+                    *self = ty.clone().with_span(*span);
+                }
+            }
         }
+    }
+    pub(crate) fn apply(&self, rules: &Substitution<'a>) -> Self {
+        let mut ret = self.clone();
+        for (left, ty) in rules.map.iter().rev() {
+            ret.apply_rule(left, ty)
+        }
+        ret
     }
 
     pub fn integer(span: Span<'a>) -> Self {

@@ -140,7 +140,7 @@ fn unify<'a>(lhs: Type<'a>, rhs: Type<'a>) -> Result<Substitution<'a>, TypeError
                 })
             } else {
                 Ok(Substitution {
-                    map: maplit::hashmap! {
+                    map: maplit::btreemap! {
                         *tvar => rhs.clone()
                     },
                 })
@@ -155,7 +155,7 @@ fn unify<'a>(lhs: Type<'a>, rhs: Type<'a>) -> Result<Substitution<'a>, TypeError
                 })
             } else {
                 Ok(Substitution {
-                    map: maplit::hashmap! {
+                    map: maplit::btreemap! {
                         *tvar => any.clone()
                     },
                 })
@@ -175,7 +175,7 @@ fn infer<'a>(
 
             let (mut sub, fn_type) = infer(env, fresh, &children[0])?;
 
-            let types = children[1..]
+            let mut types = children[1..]
                 .iter()
                 .map(|child| {
                     let (new_sub, ty) = infer(env, fresh, child)?;
@@ -183,17 +183,28 @@ fn infer<'a>(
                     sub = sub.clone().union(new_sub);
                     Ok(ty)
                 })
-                .chain(once(Ok(fresh_type_variable.clone())))
                 .collect::<Result<Vec<_>, _>>()?;
+            types.push(fresh_type_variable.apply(&sub));
 
-            let unified = unify(
-                fn_type,
-                Type::Constant {
-                    span: *span,
-                    name: TypeName::Fn,
-                    parameters: types,
-                },
-            )?;
+            let d_fn_type = fn_type.clone();
+            let d_types = types.clone();
+
+            println!("----");
+            println!("lhs: {}", fn_type);
+            println!("rhs: {}", Type::function(d_types.clone(), *span));
+            let unified = unify(fn_type, Type::function(types, *span))?;
+
+            println!("---- sub");
+            for (tv, ty) in unified.map.iter() {
+                println!("{} <- {}", tv, ty);
+            }
+
+            println!("---- post unification");
+            println!("lhs: {}", d_fn_type.apply(&unified));
+            println!(
+                "rhs: {}",
+                Type::function(d_types.clone(), *span).apply(&unified)
+            );
 
             let ty = fresh_type_variable.apply(&unified);
 

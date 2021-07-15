@@ -17,11 +17,11 @@ pub enum SymbolError<'a> {
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum CompileError<'a> {
-    #[error("{0}")]
+    #[error("symbol error: {0}")]
     Symbol(SymbolError<'a>),
-    #[error("{0}")]
+    #[error("type error: {0}")]
     Type(TypeError<'a>),
-    #[error("error: invalid extern\ncode:{}:{}\n\t{span}", .span.location_line(), .span.get_utf8_column())]
+    #[error("extern error: invalid extern\ncode:{}:{}\n\t{span}", .span.location_line(), .span.get_utf8_column())]
     InvalidExtern {
         name: &'a str,
         span: Span<'a>,
@@ -42,19 +42,19 @@ impl<'a> From<TypeError<'a>> for CompileError<'a> {
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum TypeError<'a> {
-    #[error("error: invalid type\ncode:{}:{}\n\texpected: {expected}\n\tfound: {found} ", .span.location_line(), .span.get_utf8_column())]
+    #[error("invalid type\ncode:{}:{}\n\texpected: {expected}\n\tfound: {found} ", .span.location_line(), .span.get_utf8_column())]
     InvalidType {
         expected: Type<'a>,
         found: Type<'a>,
         span: Span<'a>,
     },
-    #[error("error: infinite type\ncode:{}:{}\n\t'{left}' <- '{right}'", .span.location_line(), .span.get_utf8_column())]
+    #[error("infinite type\ncode:{}:{}\n\t'{left}' <- '{right}'", .span.location_line(), .span.get_utf8_column())]
     InfiniteType {
         left: Type<'a>,
         right: Type<'a>,
         span: Span<'a>,
     },
-    #[error("error: ambiguous type\ncode:{}:{}\n\t{ty}\n\t{}",
+    #[error("ambiguous type\ncode:{}:{}\n\t{ty}\n\t{}",
         .ty.span().location_line(), 
         .ty.span().get_utf8_column(), 
         .ty.span().fragment()
@@ -64,7 +64,7 @@ pub enum TypeError<'a> {
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum RuntimeError {
-    #[error("invalid type, found {found}, expected {expected}")]
+    #[error("runtime error: invalid type\n\tfound {found}\n\texpected {expected}")]
     InvalidType { found: Value, expected: String },
     #[error("attempted to pop an argument on an empty stack")]
     EmptyStack,

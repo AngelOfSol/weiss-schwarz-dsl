@@ -30,3 +30,22 @@ pub fn some(executor: &mut Executor, _: &mut Game) -> Result<(), RuntimeError> {
     executor.stack.push(Value::Some(Box::new(value)));
     Ok(())
 }
+
+pub fn or_default(executor: &mut Executor, _: &mut Game) -> Result<(), RuntimeError> {
+    let value = executor.stack.pop_any()?;
+    let default = executor.stack.pop_any()?;
+    match value {
+        Value::Some(value) => {
+            executor.stack.push_any(*value);
+            Ok(())
+        }
+        Value::None => {
+            executor.stack.push_any(default);
+            Ok(())
+        }
+        found => Err(RuntimeError::InvalidType {
+            found,
+            expected: format!("?T"),
+        }),
+    }
+}
