@@ -186,25 +186,7 @@ fn infer<'a>(
                 .collect::<Result<Vec<_>, _>>()?;
             types.push(fresh_type_variable.apply(&sub));
 
-            let d_fn_type = fn_type.clone();
-            let d_types = types.clone();
-
-            println!("----");
-            println!("lhs: {}", fn_type);
-            println!("rhs: {}", Type::function(d_types.clone(), *span));
             let unified = unify(fn_type, Type::function(types, *span))?;
-
-            println!("---- sub");
-            for (tv, ty) in unified.map.iter() {
-                println!("{} <- {}", tv, ty);
-            }
-
-            println!("---- post unification");
-            println!("lhs: {}", d_fn_type.apply(&unified));
-            println!(
-                "rhs: {}",
-                Type::function(d_types.clone(), *span).apply(&unified)
-            );
 
             let ty = fresh_type_variable.apply(&unified);
 
