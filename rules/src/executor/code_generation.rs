@@ -5,7 +5,7 @@ use crate::{
         bytecode::{Bytecode, LabeledBytecode},
         value::Value,
     },
-    parsing::SexprValue,
+    parsing::{FunctionDefinition, SexprValue},
 };
 
 use super::bytecode::InternalBytecode;
@@ -178,12 +178,26 @@ fn generate_internal(ast: SexprValue<'_>, symbols: &mut SymbolTable) -> Vec<Labe
 }
 pub fn generate(
     ast: SexprValue<'_>,
+    function_defintions: Vec<FunctionDefinition<'_>>,
 ) -> (Vec<Bytecode>, Vec<LabeledBytecode>, HashMap<String, usize>) {
     let mut symbols = SymbolTable::default();
     let internal = generate_internal(ast, &mut symbols);
     let internal = internal
         .into_iter()
         .chain(once(InternalBytecode::Return))
+        .chain(
+            function_defintions
+                .into_iter()
+                .map(|def| {
+                    let mut bytecode = generate_internal(def.eval, &mut symbols);
+                    bytecode.insert(0, InternalBytecode::label(def.name.to_string()));
+
+                    bytecode
+                })
+                .flatten(),
+        )
+        .collect::<Vec<_>>()
+        .into_iter()
         .chain(symbols.fns)
         .collect::<Vec<_>>();
 

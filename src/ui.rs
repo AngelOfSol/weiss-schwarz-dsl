@@ -60,7 +60,7 @@ impl DebugUi {
                                 };
                                 semantic_analysis(&value, &externs, &defintions)
                                     .map_err(|err| err.to_string())?;
-                                let (for_exec, for_display, labels) = generate(value);
+                                let (for_exec, for_display, labels) = generate(value, defintions);
                                 executor.labels = labels;
                                 executor.bytecode = for_exec;
 
