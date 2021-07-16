@@ -174,6 +174,12 @@ fn generate_internal(ast: SexprValue<'_>, symbols: &mut SymbolTable) -> Vec<Labe
                 .flatten()
                 .collect()
         }
+        SexprValue::Seq {
+            sub_expressions, ..
+        } => sub_expressions
+            .into_iter()
+            .flat_map(|expr| generate_internal(expr, symbols))
+            .collect(),
     }
 }
 pub fn generate(

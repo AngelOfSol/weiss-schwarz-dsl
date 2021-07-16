@@ -10,7 +10,7 @@ use crate::{
             types::{Type, TypeName, TypeVariable},
         },
     },
-    parsing::{parse_type_scheme, ExternDeclaration, SexprValue, Span},
+    parsing::{SexprValue, Span},
 };
 
 pub mod substitution;
@@ -40,6 +40,10 @@ pub(crate) enum TypeTree<'a> {
         name: &'a str,
         span: Span<'a>,
     },
+    Seq {
+        sub_expressions: Vec<TypeTree<'a>>,
+        span: Span<'a>,
+    },
     Leaf(Type<'a>),
 }
 
@@ -63,6 +67,13 @@ impl<'a> TypeTree<'a> {
             TypeTree::Leaf(ty) => *ty = ty.apply(rules),
             TypeTree::Fn { expr, .. } => {
                 expr.apply(rules);
+            }
+            TypeTree::Seq {
+                sub_expressions, ..
+            } => {
+                for expr in sub_expressions {
+                    expr.apply(rules);
+                }
             }
         }
     }
@@ -271,6 +282,21 @@ pub(crate) fn infer<'a>(
                 },
             ))
         }
+        TypeTree::Seq {
+            sub_expressions, ..
+        } => {
+            let mut sub = Substitution::default();
+            let mut resulting_types = sub_expressions
+                .iter()
+                .map(|expr| {
+                    let (new_sub, ty) = infer(env, fresh, expr)?;
+                    sub = sub.clone().union(new_sub);
+                    Ok(ty)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+
+            Ok((sub, resulting_types.pop().unwrap()))
+        }
     }
 }
 
@@ -361,6 +387,16 @@ pub(crate) fn build_type_tree<'a>(sexpr: &SexprValue<'a>, fresh: &mut Fresh) -> 
                 .map(|(key, value)| (*key, build_type_tree(value, fresh)))
                 .collect(),
             expr: Box::new(build_type_tree(expr, fresh)),
+            span: *span,
+        },
+        SexprValue::Seq {
+            sub_expressions,
+            span,
+        } => TypeTree::Seq {
+            sub_expressions: sub_expressions
+                .iter()
+                .map(|expr| build_type_tree(expr, fresh))
+                .collect(),
             span: *span,
         },
     }

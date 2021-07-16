@@ -104,7 +104,8 @@ impl<'a> TryFrom<SexprValue<'a>> for Value {
             | x @ SexprValue::Let { .. }
             | x @ SexprValue::If { .. }
             | x @ SexprValue::Sexpr { .. }
-            | x @ SexprValue::Fn { .. } => Err(x),
+            | x @ SexprValue::Fn { .. }
+            | x @ SexprValue::Seq { .. } => Err(x),
         }
     }
 }

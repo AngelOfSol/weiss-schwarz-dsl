@@ -35,6 +35,23 @@ pub fn parse_sexpr(input: Span) -> IResult<Span, SexprValue> {
         },
     )(input)
 }
+pub fn parse_seq(input: Span) -> IResult<Span, SexprValue> {
+    map(
+        consumed(delimited(
+            lexing::open,
+            delimited(
+                tag("seq"),
+                many0(preceded(lexing::whitespace, parse_sexpr_value)),
+                opt(lexing::whitespace),
+            ),
+            lexing::close,
+        )),
+        |(span, sub_expressions)| SexprValue::Seq {
+            sub_expressions,
+            span: span,
+        },
+    )(input)
+}
 
 pub fn parse_array(input: Span) -> IResult<Span, SexprValue> {
     map(
@@ -250,6 +267,7 @@ pub fn parse_sexpr_value(input: Span) -> IResult<Span, SexprValue> {
         parse_array,
         // parse_symbol must be second to last
         parse_symbol,
+        parse_seq,
         parse_sexpr,
     ))(input)
 }
@@ -323,6 +341,10 @@ pub enum SexprValue<'a> {
     Let {
         bindings: Vec<(&'a str, SexprValue<'a>)>,
         expr: Box<SexprValue<'a>>,
+        span: Span<'a>,
+    },
+    Seq {
+        sub_expressions: Vec<SexprValue<'a>>,
         span: Span<'a>,
     },
 }
@@ -401,6 +423,17 @@ impl<'a> Display for SexprValue<'a> {
                 )
             }
             SexprValue::None(..) => write!(f, "none"),
+            SexprValue::Seq {
+                sub_expressions, ..
+            } => write!(
+                f,
+                "(seq {})",
+                sub_expressions
+                    .iter()
+                    .map(|expr| format!("{}", expr))
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            ),
         }
     }
 }

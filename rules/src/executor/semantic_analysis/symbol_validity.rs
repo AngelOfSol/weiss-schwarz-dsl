@@ -63,6 +63,14 @@ pub fn check_symbol_validity<'a>(
 
             check_symbol_validity(expr, symbols)
         }
+        SexprValue::Seq {
+            sub_expressions, ..
+        } => {
+            for expr in sub_expressions {
+                check_symbol_validity(expr, symbols.clone())?;
+            }
+            Ok(())
+        }
         SexprValue::Integer(..)
         | SexprValue::Zone(..)
         | SexprValue::Unit(..)
