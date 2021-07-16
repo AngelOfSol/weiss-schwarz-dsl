@@ -19,7 +19,7 @@ pub mod type_schemes;
 pub mod types;
 
 #[derive(Debug, Clone)]
-enum TypeTree<'a> {
+pub(crate) enum TypeTree<'a> {
     Call {
         children: Vec<TypeTree<'a>>,
         span: Span<'a>,
@@ -32,6 +32,7 @@ enum TypeTree<'a> {
     },
     Fn {
         bindings: Vec<(&'a str, Type<'a>)>,
+        return_type: Type<'a>,
         expr: Box<TypeTree<'a>>,
         span: Span<'a>,
     },
@@ -57,6 +58,7 @@ impl<'a> TypeTree<'a> {
                 }
                 expr.apply(rules);
             }
+
             TypeTree::Binding { .. } => (),
             TypeTree::Leaf(ty) => *ty = ty.apply(rules),
             TypeTree::Fn { expr, .. } => {
@@ -103,14 +105,19 @@ fn unify<'a>(lhs: Type<'a>, rhs: Type<'a>) -> Result<Substitution<'a>, TypeError
             for (left, right) in lhs_params.iter().zip(rhs_params.iter()) {
                 match unify(left.apply(&sub), right.apply(&sub)) {
                     Ok(applied) => sub = sub.union(applied),
-                    Err(_) => {
-                        let span = *right.span();
+                    Err(bubbled) => {
+                        err = Some(bubbled);
+                        // if matches!(&bubbled, &TypeError::InvalidType { .. }) {
+                        //     let span = *right.span();
 
-                        err = Some(TypeError::InvalidType {
-                            expected: left.clone(),
-                            found: right.clone(),
-                            span,
-                        });
+                        //     err = Some(TypeError::InvalidType {
+                        //         expected: left.clone(),
+                        //         found: right.clone(),
+                        //         span,
+                        //     });
+                        // } else {
+                        //     err = Some(bubbled);
+                        // }
                     }
                 }
             }
@@ -131,13 +138,9 @@ fn unify<'a>(lhs: Type<'a>, rhs: Type<'a>) -> Result<Substitution<'a>, TypeError
                 Ok(sub)
             }
         }
-        (Type::Var(tvar, span), rhs @ Type::Var(rhs_tvar, ..)) => {
+        (Type::Var(tvar, ..), rhs @ Type::Var(rhs_tvar, ..)) => {
             if tvar == rhs_tvar {
-                Err(TypeError::InfiniteType {
-                    left: Type::Var(*tvar, *span),
-                    right: rhs.clone(),
-                    span: *span,
-                })
+                Ok(Substitution::default())
             } else {
                 Ok(Substitution {
                     map: maplit::btreemap! {
@@ -164,7 +167,7 @@ fn unify<'a>(lhs: Type<'a>, rhs: Type<'a>) -> Result<Substitution<'a>, TypeError
     }
 }
 
-fn infer<'a>(
+pub(crate) fn infer<'a>(
     env: &TypeEnvironment<'a>,
     fresh: &mut Fresh,
     tt: &TypeTree<'a>,
@@ -216,6 +219,7 @@ fn infer<'a>(
             bindings,
             expr,
             span,
+            return_type,
             ..
         } => {
             let mut env = env.clone();
@@ -223,7 +227,17 @@ fn infer<'a>(
             let parameters = bindings
                 .iter()
                 .map(|(binding, ty)| {
-                    let var = ty.clone();
+                    // this gets fresh new type variables, just in case the previous version
+                    // had overlapping id's
+                    let replace = Substitution {
+                        map: ty
+                            .free_variables()
+                            .into_iter()
+                            .map(|old| (old, Type::type_var(fresh.next(), *ty.span())))
+                            .collect(),
+                    };
+                    let var = ty.apply(&replace);
+
                     env.map.insert(
                         binding,
                         TypeScheme {
@@ -237,10 +251,15 @@ fn infer<'a>(
 
             let (sub, ty) = infer(&mut env, fresh, expr)?;
 
+            // make sure to unify return types
+            let retsub = unify(return_type.clone(), ty.clone())?;
+
+            let sub = sub.union(retsub);
+
             let parameters = parameters
                 .into_iter()
                 .map(|ty| ty.apply(&sub))
-                .chain(once(ty))
+                .chain(once(ty.apply(&sub)))
                 .collect();
 
             Ok((
@@ -255,7 +274,7 @@ fn infer<'a>(
     }
 }
 
-fn build_type_tree<'a>(sexpr: &SexprValue<'a>, fresh: &mut Fresh) -> TypeTree<'a> {
+pub(crate) fn build_type_tree<'a>(sexpr: &SexprValue<'a>, fresh: &mut Fresh) -> TypeTree<'a> {
     match sexpr {
         SexprValue::Sexpr {
             target,
@@ -305,9 +324,11 @@ fn build_type_tree<'a>(sexpr: &SexprValue<'a>, fresh: &mut Fresh) -> TypeTree<'a
             arguments,
             eval,
             span,
+            return_type,
             ..
         } => TypeTree::Fn {
             bindings: arguments.clone(),
+            return_type: return_type.clone(),
             expr: Box::new(build_type_tree(eval, fresh)),
             span: *span,
         },
@@ -345,35 +366,21 @@ fn build_type_tree<'a>(sexpr: &SexprValue<'a>, fresh: &mut Fresh) -> TypeTree<'a
     }
 }
 
-pub fn type_check<'a>(
-    ast: &'a SexprValue,
-    externs: &Vec<ExternDeclaration<'a>>,
-) -> Result<Type<'a>, TypeError<'a>> {
-    let mut fresh = Fresh::default();
-    let mut env = TypeEnvironment::default();
+// pub fn type_check<'a>(
+//     ast: &'a SexprValue,
+//     externs: &Vec<ExternDeclaration<'a>>,
+// ) -> Result<Type<'a>, TypeError<'a>> {
+//     let data = build_type_tree(ast, &mut fresh);
 
-    for decl in externs {
-        env.map.insert(decl.name, decl.type_scheme.clone());
-    }
+//     let (_sub, ty) = infer(&env, &mut fresh, &data)?;
 
-    env.map.insert(
-        "if",
-        parse_type_scheme(Span::new("fn(bool, T, T) -> T"))
-            .unwrap()
-            .1,
-    );
-
-    let data = build_type_tree(ast, &mut fresh);
-
-    let (_sub, ty) = infer(&env, &mut fresh, &data)?;
-
-    let mut data = data;
-    data.apply(&_sub);
-    // dbg!(_sub);
-    // dbg!(data);
-    if !ty.is_concrete() {
-        Err(TypeError::UninferredType { ty })
-    } else {
-        Ok(ty)
-    }
-}
+//     let mut data = data;
+//     data.apply(&_sub);
+//     // dbg!(_sub);
+//     // dbg!(data);
+//     if !ty.is_concrete() {
+//         Err(TypeError::UninferredType { ty })
+//     } else {
+//         Ok(ty)
+//     }
+// }

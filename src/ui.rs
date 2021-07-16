@@ -49,7 +49,7 @@ impl DebugUi {
                         let temp = self.console_input.clone();
                         let ci = Span::new(&temp);
                         let result = parse_program(ci).map_err(|err| err.to_string()).and_then(
-                            |(_, (externs, value))| {
+                            |(_, (externs, defintions, value))| {
                                 let mut executor = Executor {
                                     stack: ExecutorStack::default(),
                                     heap: ExecutorHeap::default(),
@@ -58,7 +58,7 @@ impl DebugUi {
                                     ip_stack: vec![],
                                     labels: HashMap::new(),
                                 };
-                                semantic_analysis(&value, &externs)
+                                semantic_analysis(&value, &externs, &defintions)
                                     .map_err(|err| err.to_string())?;
                                 let (for_exec, for_display, labels) = generate(value);
                                 executor.labels = labels;

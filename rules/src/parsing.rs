@@ -1,6 +1,6 @@
 pub mod lexing;
 
-use std::{cell::RefCell, collections::HashMap, fmt::Display};
+use std::{cell::RefCell, collections::HashMap, fmt::Display, iter::once};
 
 use nom::{
     branch::alt,
@@ -412,14 +412,63 @@ pub struct ExternDeclaration<'a> {
     pub span: Span<'a>,
 }
 
-pub fn parse_program(input: Span) -> IResult<Span, (Vec<ExternDeclaration>, SexprValue)> {
-    tuple((
-        terminated(
-            separated_list0(lexing::whitespace, parse_extern),
-            opt(lexing::whitespace),
-        ),
-        parse_sexpr_value,
-    ))(input)
+#[derive(Debug)]
+enum Preamble<'a> {
+    Extern(ExternDeclaration<'a>),
+    Definition(FunctionDefinition<'a>),
+}
+
+impl<'a> Preamble<'a> {
+    fn try_into_extern(self) -> Result<ExternDeclaration<'a>, Self> {
+        if let Self::Extern(v) = self {
+            Ok(v)
+        } else {
+            Err(self)
+        }
+    }
+
+    fn try_into_definition(self) -> Result<FunctionDefinition<'a>, Self> {
+        if let Self::Definition(v) = self {
+            Ok(v)
+        } else {
+            Err(self)
+        }
+    }
+}
+
+pub fn parse_program(
+    input: Span,
+) -> IResult<Span, (Vec<ExternDeclaration>, Vec<FunctionDefinition>, SexprValue)> {
+    map(
+        tuple((
+            terminated(
+                separated_list0(
+                    lexing::whitespace,
+                    alt((
+                        map(parse_extern, Preamble::Extern),
+                        map(parse_fn_definition, Preamble::Definition),
+                    )),
+                ),
+                opt(lexing::whitespace),
+            ),
+            parse_sexpr_value,
+        )),
+        |(preambles, program)| {
+            let (lhs, rhs) = preambles
+                .into_iter()
+                .partition::<Vec<_>, _>(|value| matches!(value, Preamble::Extern(..)));
+            let externs: Vec<_> = lhs
+                .into_iter()
+                .map(|item| item.try_into_extern().ok().unwrap())
+                .collect();
+            let definitions: Vec<_> = rhs
+                .into_iter()
+                .map(|item| item.try_into_definition().ok().unwrap())
+                .collect();
+
+            (externs, definitions, program)
+        },
+    )(input)
 }
 
 pub fn parse_extern(input: Span) -> IResult<Span, ExternDeclaration> {
@@ -439,6 +488,54 @@ pub fn parse_extern(input: Span) -> IResult<Span, ExternDeclaration> {
             name,
             type_scheme,
             span,
+        },
+    )(input)
+}
+
+#[derive(Debug, Clone)]
+pub struct FunctionDefinition<'a> {
+    pub name: &'a str,
+    pub eval: SexprValue<'a>,
+    pub span: Span<'a>,
+    pub ty: Type<'a>,
+}
+
+pub fn parse_fn_definition(input: Span) -> IResult<Span, FunctionDefinition> {
+    map(
+        consumed(delimited(
+            lexing::open,
+            preceded(
+                pair(tag("define"), lexing::whitespace),
+                pair(lexing::identifier, preceded(lexing::whitespace, parse_fn)),
+            ),
+            lexing::close,
+        )),
+        |(span, (name, eval))| {
+            let ty = if let SexprValue::Fn {
+                arguments,
+                return_type,
+                span,
+                ..
+            } = &eval
+            {
+                Type::function(
+                    arguments
+                        .iter()
+                        .map(|(_, ty)| ty.clone())
+                        .chain(once(return_type.clone()))
+                        .collect(),
+                    *span,
+                )
+            } else {
+                unreachable!()
+            };
+
+            FunctionDefinition {
+                name,
+                eval,
+                span,
+                ty,
+            }
         },
     )(input)
 }

@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
 use crate::executor::semantic_analysis::hm::{
+    substitution::Substitution,
     types::{Type, TypeVariable},
     Fresh,
 };
@@ -25,6 +26,17 @@ impl<'a> TypeScheme<'a> {
             .fold(self.ty.clone(), |acc, elem| {
                 acc.instantiate(*elem, fresh.next())
             })
+    }
+    pub(crate) fn apply(&self, rules: &Substitution<'a>) -> Self {
+        let mut rules = rules.clone();
+        rules
+            .map
+            .retain(|var, _| self.free_variables().contains(var));
+
+        Self {
+            ty: self.ty.apply(&rules),
+            type_variables: self.type_variables.clone(),
+        }
     }
 
     pub(crate) fn generalize_all(ty: Type<'a>) -> Self {
