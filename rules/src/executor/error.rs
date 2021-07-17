@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use crate::{
     executor::{
         semantic_analysis::hm::types::Type,
@@ -48,6 +50,11 @@ pub enum TypeError<'a> {
         found: Type<'a>,
         span: Span<'a>,
     },
+    #[error("multiple array types\ncode:{}:{}\n\tfound: {}", .span.location_line(), .span.get_utf8_column(), render_array(.found))]
+    InvalidArray {
+        found: BTreeSet<Type<'a>>,
+        span: Span<'a>,
+    },
     #[error("infinite type\ncode:{}:{}\n\t'{left}' <- '{right}'", .span.location_line(), .span.get_utf8_column())]
     InfiniteType {
         left: Type<'a>,
@@ -60,6 +67,10 @@ pub enum TypeError<'a> {
         .ty.span().fragment()
     )]
     UninferredType { ty: Type<'a> },
+}
+
+fn render_array<'a>(found: &BTreeSet<Type<'a>>) -> String {
+    found.into_iter().map(|ty| format!("{}", ty)).intersperse(format!(", ")).collect()
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]

@@ -1464,6 +1464,7 @@ dependencies = [
 name = "rules"
 version = "0.1.0"
 dependencies = [
+ "derivative",
  "lazy_static",
  "log",
  "maplit",

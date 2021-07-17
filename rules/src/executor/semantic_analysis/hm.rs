@@ -44,17 +44,23 @@ pub(crate) enum TypeTree<'a> {
         sub_expressions: Vec<TypeTree<'a>>,
         span: Span<'a>,
     },
+
+    Array {
+        values: Vec<TypeTree<'a>>,
+        span: Span<'a>,
+    },
     Leaf(Type<'a>),
 }
 
 impl<'a> TypeTree<'a> {
     pub(crate) fn span(&self) -> &Span<'a> {
         match self {
-            TypeTree::Call { span, .. } => span,
-            TypeTree::Let { span, .. } => span,
-            TypeTree::Fn { span, .. } => span,
-            TypeTree::Binding { span, .. } => span,
-            TypeTree::Seq { span, .. } => span,
+            TypeTree::Call { span, .. }
+            | TypeTree::Let { span, .. }
+            | TypeTree::Fn { span, .. }
+            | TypeTree::Binding { span, .. }
+            | TypeTree::Array { span, .. }
+            | TypeTree::Seq { span, .. } => span,
             TypeTree::Leaf(inner) => inner.span(),
         }
     }
@@ -64,6 +70,11 @@ impl<'a> TypeTree<'a> {
             TypeTree::Call { children, .. } => {
                 for child in children {
                     child.apply(rules);
+                }
+            }
+            TypeTree::Array { values, .. } => {
+                for value in values {
+                    value.apply(rules);
                 }
             }
             TypeTree::Let { bindings, expr, .. } => {
@@ -324,6 +335,27 @@ pub(crate) fn infer<'a>(
 
             Ok((sub, resulting_types.pop().unwrap()))
         }
+        TypeTree::Array { values, span } => {
+            let mut sub = Substitution::default();
+            let mut resulting_types = values
+                .iter()
+                .map(|expr| {
+                    let (new_sub, ty) = infer(env, fresh, expr)?;
+                    sub = sub.clone().union(new_sub);
+                    Ok(ty)
+                })
+                .collect::<Result<BTreeSet<_>, _>>()?;
+
+            if resulting_types.len() == 1 {
+                let ty = resulting_types.pop_first().unwrap();
+                Ok((sub, Type::array(ty, *span)))
+            } else {
+                Err(TypeError::InvalidArray {
+                    found: resulting_types,
+                    span: *span,
+                })
+            }
+        }
     }
 }
 
@@ -372,7 +404,13 @@ pub(crate) fn build_type_tree<'a>(sexpr: &SexprValue<'a>, fresh: &mut Fresh) -> 
             name: TypeName::Option,
             parameters: vec![Type::Var(fresh.next(), *span)],
         }),
-        SexprValue::Array { .. } => todo!(),
+        SexprValue::Array { span, values } => TypeTree::Array {
+            span: *span,
+            values: values
+                .iter()
+                .map(|value| build_type_tree(value, fresh))
+                .collect(),
+        },
         SexprValue::Fn {
             arguments,
             eval,

@@ -1,9 +1,9 @@
+use crate::{executor::semantic_analysis::hm::substitution::Substitution, parsing::Span};
+use derivative::Derivative;
 use std::{
     collections::{BTreeMap, BTreeSet},
     fmt::Display,
 };
-
-use crate::{executor::semantic_analysis::hm::substitution::Substitution, parsing::Span};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TypeVariable(usize);
@@ -20,7 +20,7 @@ impl Display for TypeVariable {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum TypeName {
     Integer,
     Bool,
@@ -46,15 +46,30 @@ impl Display for TypeName {
         }
     }
 }
-
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Derivative)]
+#[derivative(
+    PartialEq,
+    Eq,
+    PartialOrd = "feature_allow_slow_enum",
+    Ord = "feature_allow_slow_enum"
+)]
+#[derive(Clone, Debug)]
 pub enum Type<'a> {
     Constant {
         name: TypeName,
         parameters: Vec<Type<'a>>,
+        #[derivative(PartialEq = "ignore")]
+        #[derivative(PartialOrd = "ignore")]
+        #[derivative(Ord = "ignore")]
         span: Span<'a>,
     },
-    Var(TypeVariable, Span<'a>),
+    Var(
+        TypeVariable,
+        #[derivative(PartialEq = "ignore")]
+        #[derivative(PartialOrd = "ignore")]
+        #[derivative(Ord = "ignore")]
+        Span<'a>,
+    ),
 }
 
 impl<'a> Display for Type<'a> {

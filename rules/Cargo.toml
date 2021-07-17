@@ -16,3 +16,4 @@ strum = {version = "0.21.0", features = ["derive"]}
 thiserror = "1.0.25"
 nom_locate = "3.0.1"
 log = "0.4.14"
+derivative = "2.2.0"
