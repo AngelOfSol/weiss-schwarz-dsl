@@ -9,9 +9,9 @@ pub(crate) struct Substitution<'a> {
 
 impl<'a> Substitution<'a> {
     pub(crate) fn union(self, rhs: Self) -> Self {
-        for tv in rhs.map.iter().map(|(var, _)| var) {
-            if self.map.iter().any(|(og_tv, _)| og_tv == tv) {
-                panic!()
+        for (tv, lhs) in rhs.map.iter() {
+            if let Some((og_tv, rhs)) = self.map.iter().find(|(og_tv, _)| og_tv == tv) {
+                log::warn!("{}: {} replacing {}: {}", tv, lhs, og_tv, rhs);
             }
         }
 

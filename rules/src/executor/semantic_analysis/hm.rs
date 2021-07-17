@@ -233,8 +233,8 @@ pub(crate) fn infer<'a>(
                 // backfill on to previous inferences
                 env = env.apply(&unified_sub);
 
-                // then we insert the proper generalized version into
-                // the environment
+                // then we insert the proper generalized version
+                // into the environment
                 env.map.insert(*name, t_prime);
 
                 sub = sub.union(new_sub);
@@ -242,10 +242,6 @@ pub(crate) fn infer<'a>(
             }
 
             let (expr, ty) = infer(&mut env, fresh, expr)?;
-            println!("-- env");
-            for (name, scheme) in env.map.iter() {
-                println!("{}: {}", name, scheme);
-            }
 
             Ok((sub.union(expr), ty))
         }
