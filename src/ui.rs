@@ -47,7 +47,7 @@ impl DebugUi {
 
                     if ui.button("Run").clicked() && !self.console_input.is_empty() {
                         let temp = self.console_input.clone();
-                        let ci = Span::new(&temp);
+                        let ci = Span::new_extra(&temp, "<editor>");
                         let result = parse_program(ci).map_err(|err| err.to_string()).and_then(
                             |(_, (externs, defintions, value))| {
                                 let mut executor = Executor {

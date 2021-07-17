@@ -11,9 +11,9 @@ use thiserror::Error;
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum SymbolError<'a> {
-    #[error("invalid symbol: {name} at line {}, col {}", .span.location_line(), .span.get_utf8_column())]
+    #[error("invalid symbol:\n{}:{}:{}\n\t{name}", .span.extra, .span.location_line(), .span.get_utf8_column())]
     InvalidSymbol { name: &'a str, span: Span<'a> },
-    #[error("invalid fn: {name}  at line {}, col {}", .span.location_line(), .span.get_utf8_column())]
+    #[error("invalid fn:\n{}:{}:{}\n\t{name}", .span.extra, .span.location_line(), .span.get_utf8_column())]
     InvalidFn { name: &'a str, span: Span<'a> },
 }
 
@@ -23,7 +23,7 @@ pub enum CompileError<'a> {
     Symbol(SymbolError<'a>),
     #[error("type error: {0}")]
     Type(TypeError<'a>),
-    #[error("extern error: invalid extern\ncode:{}:{}\n\t{span}", .span.location_line(), .span.get_utf8_column())]
+    #[error("extern error: invalid extern\n{}:{}:{}\n\t{span}", .span.extra, .span.location_line(), .span.get_utf8_column())]
     InvalidExtern {
         name: &'a str,
         span: Span<'a>,
@@ -44,24 +44,25 @@ impl<'a> From<TypeError<'a>> for CompileError<'a> {
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum TypeError<'a> {
-    #[error("invalid type\ncode:{}:{}\n\texpected: {expected}\n\tfound: {found} ", .span.location_line(), .span.get_utf8_column())]
+    #[error("invalid type\n{}:{}:{}\n\texpected: {expected}\n\tfound: {found} ", .span.extra, .span.location_line(), .span.get_utf8_column())]
     InvalidType {
         expected: Type<'a>,
         found: Type<'a>,
         span: Span<'a>,
     },
-    #[error("multiple array types\ncode:{}:{}\n\tfound: {}", .span.location_line(), .span.get_utf8_column(), render_array(.found))]
+    #[error("multiple array types\n{}:{}:{}\n\tfound: {}", .span.extra, .span.location_line(), .span.get_utf8_column(), render_array(.found))]
     InvalidArray {
         found: BTreeSet<Type<'a>>,
         span: Span<'a>,
     },
-    #[error("infinite type\ncode:{}:{}\n\t'{left}' <- '{right}'", .span.location_line(), .span.get_utf8_column())]
+    #[error("infinite type\n{}:{}:{}\n\t'{left}' <- '{right}'", .span.extra, .span.location_line(), .span.get_utf8_column())]
     InfiniteType {
         left: Type<'a>,
         right: Type<'a>,
         span: Span<'a>,
     },
-    #[error("ambiguous type\ncode:{}:{}\n\t{ty}\n\t{}",
+    #[error("ambiguous type\n{}:{}:{}\n\t{ty}\n\t{}",
+        .ty.span().extra, 
         .ty.span().location_line(), 
         .ty.span().get_utf8_column(), 
         .ty.span().fragment()

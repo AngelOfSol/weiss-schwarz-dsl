@@ -72,7 +72,7 @@ pub fn semantic_analysis<'a>(
 
     env.map.insert(
         "if",
-        parse_type_scheme(Span::new("fn(bool, T, T) -> T"))
+        parse_type_scheme(Span::new_extra("fn(bool, T, T) -> T", "<internal>"))
             .unwrap()
             .1,
     );

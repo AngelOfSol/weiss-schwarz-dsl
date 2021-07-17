@@ -15,7 +15,9 @@ use nom_locate::LocatedSpan;
 use crate::executor::semantic_analysis::hm::{type_schemes::TypeScheme, types::Type, Fresh};
 use crate::{executor::semantic_analysis::hm::types::TypeVariable, model::ZoneId};
 
-pub type Span<'a> = LocatedSpan<&'a str>;
+pub type SpanFileName<'a> = &'a str;
+
+pub type Span<'a> = LocatedSpan<&'a str, SpanFileName<'a>>;
 
 pub fn parse_sexpr(input: Span) -> IResult<Span, SexprValue> {
     map(
