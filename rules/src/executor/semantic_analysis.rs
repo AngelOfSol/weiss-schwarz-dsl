@@ -7,10 +7,7 @@ use crate::{
     executor::{
         error::{CompileError, SymbolError},
         semantic_analysis::{
-            hm::{
-                build_type_tree, infer, substitution::Substitution,
-                type_environment::TypeEnvironment, type_schemes::TypeScheme, Fresh,
-            },
+            hm::{build_type_tree, infer, type_environment::TypeEnvironment, Fresh, TypeTree},
             symbol_validity::check_symbol_validity,
         },
         RUST_FN,
@@ -80,40 +77,27 @@ pub fn semantic_analysis<'a>(
             .1,
     );
 
-    let mut program_sub = Substitution::default();
-
     for def in definitions {
         check_symbol_validity(&def.eval, symbol_table.clone())?;
-        env.map
-            .insert(def.name, TypeScheme::generalize_all(def.ty.clone()));
     }
     check_symbol_validity(ast, symbol_table)?;
 
-    for def in definitions {
-        env.map
-            .insert(def.name, TypeScheme::generalize_all(def.ty.clone()));
-    }
-
-    for def in definitions {
-        let data = build_type_tree(&def.eval, &mut fresh);
-        let (sub, _ty) = infer(&env, &mut fresh, &data)?;
-
-        env.map.insert(def.name, TypeScheme::generalize_all(_ty));
-
-        program_sub = program_sub.union(sub);
-        env.apply(&program_sub);
-    }
-
     let data = build_type_tree(ast, &mut fresh);
 
-    let (sub, ty) = infer(&env, &mut fresh, &data)?;
+    let upper = TypeTree::Let {
+        bindings: definitions
+            .iter()
+            .map(|def| (def.name, build_type_tree(&def.eval, &mut fresh)))
+            .collect(),
+        span: *data.span(),
+        expr: Box::new(data),
+    };
 
-    program_sub = program_sub.union(sub);
+    let (program_sub, ty) = infer(&env, &mut fresh, &upper)?;
 
     ty.apply(&program_sub);
 
     env.apply(&program_sub);
 
-    // hm::type_check(ast, externs)?;
     Ok(())
 }

@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::{collections::BTreeSet, fmt::Display};
 
 use crate::executor::semantic_analysis::hm::{
     substitution::Substitution,
@@ -9,19 +9,35 @@ use crate::executor::semantic_analysis::hm::{
 #[derive(Clone, Debug)]
 pub(crate) struct TypeScheme<'a> {
     pub ty: Type<'a>,
-    pub type_variables: HashSet<TypeVariable>,
+    pub quantified_variables: BTreeSet<TypeVariable>,
 }
+
+impl<'a> Display for TypeScheme<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "<{}>{}",
+            self.quantified_variables
+                .iter()
+                .map(|inner| format!("{}", inner))
+                .intersperse(format!(", "))
+                .collect::<String>(),
+            self.ty
+        )
+    }
+}
+
 impl<'a> TypeScheme<'a> {
-    pub(crate) fn free_variables(&self) -> HashSet<TypeVariable> {
+    pub(crate) fn free_variables(&self) -> BTreeSet<TypeVariable> {
         self.ty
             .free_variables()
-            .difference(&self.type_variables)
+            .difference(&self.quantified_variables)
             .copied()
             .collect()
     }
 
     pub(crate) fn new_vars(&self, fresh: &mut Fresh) -> Type<'a> {
-        self.type_variables
+        self.quantified_variables
             .iter()
             .fold(self.ty.clone(), |acc, elem| {
                 acc.instantiate(*elem, fresh.next())
@@ -31,17 +47,17 @@ impl<'a> TypeScheme<'a> {
         let mut rules = rules.clone();
         rules
             .map
-            .retain(|var, _| self.free_variables().contains(var));
+            .retain(|(var, _)| self.free_variables().contains(var));
 
         Self {
             ty: self.ty.apply(&rules),
-            type_variables: self.type_variables.clone(),
+            quantified_variables: self.quantified_variables.clone(),
         }
     }
 
     pub(crate) fn generalize_all(ty: Type<'a>) -> Self {
         Self {
-            type_variables: ty.free_variables(),
+            quantified_variables: ty.free_variables(),
             ty,
         }
     }

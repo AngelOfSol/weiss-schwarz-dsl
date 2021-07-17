@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::executor::semantic_analysis::hm::{
     substitution::Substitution,
@@ -8,11 +8,11 @@ use crate::executor::semantic_analysis::hm::{
 
 #[derive(Default, Debug, Clone)]
 pub(crate) struct TypeEnvironment<'a> {
-    pub(crate) map: HashMap<&'a str, TypeScheme<'a>>,
+    pub(crate) map: BTreeMap<&'a str, TypeScheme<'a>>,
 }
 
 impl<'a> TypeEnvironment<'a> {
-    pub(crate) fn free_variables(&self) -> HashSet<TypeVariable> {
+    pub(crate) fn free_variables(&self) -> BTreeSet<TypeVariable> {
         self.map
             .values()
             .flat_map(|scheme| scheme.free_variables())
@@ -21,7 +21,7 @@ impl<'a> TypeEnvironment<'a> {
 
     pub(crate) fn generalize(&self, ty: Type<'a>) -> TypeScheme<'a> {
         TypeScheme {
-            type_variables: ty
+            quantified_variables: ty
                 .free_variables()
                 .difference(&self.free_variables())
                 .cloned()

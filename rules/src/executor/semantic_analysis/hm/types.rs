@@ -1,4 +1,7 @@
-use std::{collections::HashSet, fmt::Display};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt::Display,
+};
 
 use crate::{executor::semantic_analysis::hm::substitution::Substitution, parsing::Span};
 
@@ -126,13 +129,13 @@ impl<'a> Type<'a> {
             None
         }
     }
-    pub fn free_variables(&self) -> HashSet<TypeVariable> {
+    pub fn free_variables(&self) -> BTreeSet<TypeVariable> {
         match self {
             Type::Constant { parameters, .. } => parameters
                 .iter()
                 .flat_map(|item| item.free_variables())
                 .collect(),
-            Type::Var(idx, ..) => maplit::hashset! { *idx },
+            Type::Var(idx, ..) => maplit::btreeset! { *idx },
         }
     }
     pub fn span(&self) -> &Span<'a> {
@@ -151,6 +154,21 @@ impl<'a> Type<'a> {
                 span,
             },
             Type::Var(var, _) => Type::Var(var, span),
+        }
+    }
+
+    pub(crate) fn remap(self, changes: &BTreeMap<TypeVariable, TypeVariable>) -> Self {
+        match self {
+            Type::Constant {
+                name,
+                parameters,
+                span,
+            } => Type::Constant {
+                name: name,
+                parameters: parameters.into_iter().map(|ty| ty.remap(changes)).collect(),
+                span,
+            },
+            Type::Var(v, span) => Type::Var(*changes.get(&v).unwrap_or(&v), span),
         }
     }
 

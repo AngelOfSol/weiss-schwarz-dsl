@@ -1,4 +1,4 @@
-use std::{collections::HashSet, iter::once};
+use std::{collections::BTreeSet, iter::once};
 
 use crate::{
     executor::{
@@ -48,6 +48,16 @@ pub(crate) enum TypeTree<'a> {
 }
 
 impl<'a> TypeTree<'a> {
+    pub(crate) fn span(&self) -> &Span<'a> {
+        match self {
+            TypeTree::Call { span, .. } => span,
+            TypeTree::Let { span, .. } => span,
+            TypeTree::Fn { span, .. } => span,
+            TypeTree::Binding { span, .. } => span,
+            TypeTree::Seq { span, .. } => span,
+            TypeTree::Leaf(inner) => inner.span(),
+        }
+    }
     #[allow(dead_code)]
     fn apply(&mut self, rules: &Substitution<'a>) {
         match self {
@@ -118,17 +128,6 @@ fn unify<'a>(lhs: Type<'a>, rhs: Type<'a>) -> Result<Substitution<'a>, TypeError
                     Ok(applied) => sub = sub.union(applied),
                     Err(bubbled) => {
                         err = Some(bubbled);
-                        // if matches!(&bubbled, &TypeError::InvalidType { .. }) {
-                        //     let span = *right.span();
-
-                        //     err = Some(TypeError::InvalidType {
-                        //         expected: left.clone(),
-                        //         found: right.clone(),
-                        //         span,
-                        //     });
-                        // } else {
-                        //     err = Some(bubbled);
-                        // }
                     }
                 }
             }
@@ -154,9 +153,7 @@ fn unify<'a>(lhs: Type<'a>, rhs: Type<'a>) -> Result<Substitution<'a>, TypeError
                 Ok(Substitution::default())
             } else {
                 Ok(Substitution {
-                    map: maplit::btreemap! {
-                        *tvar => rhs.clone()
-                    },
+                    map: vec![(*tvar, rhs.clone())],
                 })
             }
         }
@@ -169,9 +166,7 @@ fn unify<'a>(lhs: Type<'a>, rhs: Type<'a>) -> Result<Substitution<'a>, TypeError
                 })
             } else {
                 Ok(Substitution {
-                    map: maplit::btreemap! {
-                        *tvar => any.clone()
-                    },
+                    map: vec![(*tvar, any.clone())],
                 })
             }
         }
@@ -210,17 +205,49 @@ pub(crate) fn infer<'a>(
             let mut sub = Substitution::default();
             let mut env = env.clone();
 
-            for (name, value) in bindings {
-                let (new_sub, value) = infer(&mut env, fresh, value)?;
-                let t_prime = env.generalize(value);
-                sub = sub.union(new_sub);
+            for (name, inner) in bindings {
+                let fresh_type_variable = Type::type_var(fresh.next(), *inner.span());
 
-                env.map.insert(*name, t_prime);
+                env.map.insert(
+                    *name,
+                    TypeScheme {
+                        ty: fresh_type_variable,
+                        quantified_variables: BTreeSet::new(),
+                    },
+                );
             }
 
-            let expr = infer(&mut env, fresh, expr)?;
+            for (name, value) in bindings {
+                let (new_sub, value) = infer(&mut env, fresh, value)?;
 
-            Ok((sub.union(expr.0), expr.1))
+                let unified_sub = unify(env.map[name].ty.clone(), value.clone())?;
+
+                // we apply the substitutions from the inference here
+                env = env.apply(&new_sub);
+
+                // so that when we generalize here,
+                // the quantified vs free variables are correct
+                let t_prime = env.generalize(value);
+
+                // afterwards we apply the unification to
+                // backfill on to previous inferences
+                env = env.apply(&unified_sub);
+
+                // then we insert the proper generalized version into
+                // the environment
+                env.map.insert(*name, t_prime);
+
+                sub = sub.union(new_sub);
+                sub = sub.union(unified_sub);
+            }
+
+            let (expr, ty) = infer(&mut env, fresh, expr)?;
+            println!("-- env");
+            for (name, scheme) in env.map.iter() {
+                println!("{}: {}", name, scheme);
+            }
+
+            Ok((sub.union(expr), ty))
         }
         TypeTree::Binding { name, span } => Ok((Substitution::default(), {
             env.map.get(*name).unwrap().new_vars(fresh).with_span(*span)
@@ -235,52 +262,56 @@ pub(crate) fn infer<'a>(
         } => {
             let mut env = env.clone();
 
+            let decl_ty = Type::function(
+                bindings
+                    .iter()
+                    .map(|(_, lhs)| lhs.clone())
+                    .chain(once(return_type.clone()))
+                    .collect(),
+                *span,
+            );
+
+            let decl_remap = decl_ty
+                .free_variables()
+                .into_iter()
+                .map(|old| (old, fresh.next()))
+                .collect();
+
+            let decl_ty = decl_ty.remap(&decl_remap);
+
             let parameters = bindings
                 .iter()
                 .map(|(binding, ty)| {
-                    // this gets fresh new type variables, just in case the previous version
-                    // had overlapping id's
-                    let replace = Substitution {
-                        map: ty
-                            .free_variables()
-                            .into_iter()
-                            .map(|old| (old, Type::type_var(fresh.next(), *ty.span())))
-                            .collect(),
-                    };
-                    let var = ty.apply(&replace);
+                    let fresh_type_variable = Type::type_var(fresh.next(), *ty.span());
 
                     env.map.insert(
                         binding,
                         TypeScheme {
-                            ty: var.clone(),
-                            type_variables: HashSet::new(),
+                            ty: fresh_type_variable.clone(),
+                            quantified_variables: BTreeSet::new(),
                         },
                     );
-                    var
+
+                    fresh_type_variable
                 })
                 .collect::<Vec<_>>();
 
             let (sub, ty) = infer(&mut env, fresh, expr)?;
 
-            // make sure to unify return types
-            let retsub = unify(return_type.clone(), ty.clone())?;
-
-            let sub = sub.union(retsub);
-
             let parameters = parameters
                 .into_iter()
                 .map(|ty| ty.apply(&sub))
                 .chain(once(ty.apply(&sub)))
-                .collect();
+                .collect::<Vec<_>>();
 
-            Ok((
-                sub,
-                Type::Constant {
-                    span: *span,
-                    name: TypeName::Fn,
-                    parameters,
-                },
-            ))
+            let result_ty = Type::function(parameters.clone(), *ty.span());
+
+            // this checks to make sure that our declaration and our inferred types match properly
+            let new_sub = unify(decl_ty, result_ty.clone())?;
+
+            let result_ty = result_ty.apply(&new_sub);
+
+            Ok((sub.union(new_sub), result_ty))
         }
         TypeTree::Seq {
             sub_expressions, ..
