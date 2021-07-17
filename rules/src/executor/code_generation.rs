@@ -59,6 +59,12 @@ impl SymbolTable {
             .insert(binding.to_string(), format!("{}-{}", binding, idx));
         self.variable_binding.last().unwrap().get(binding).unwrap()
     }
+    pub fn rebind(&mut self, old: &str, new: String) {
+        self.variable_binding
+            .last_mut()
+            .unwrap()
+            .insert(old.to_string(), new);
+    }
 
     pub fn add_fn<I: IntoIterator<Item = LabeledBytecode>>(&mut self, data: I) {
         self.fns.extend(data)
@@ -80,15 +86,15 @@ fn generate_internal(ast: SexprValue<'_>, symbols: &mut SymbolTable) -> Vec<Labe
             _ => {
                 let label = symbols
                     .get_binding(target)
-                    .map(ToString::to_string)
-                    .unwrap_or(target.to_string());
+                    .map(|label| vec![LabeledBytecode::call(label.to_string())])
+                    .unwrap_or_else(|| vec![LabeledBytecode::call(target.to_string())]);
 
                 arguments
                     .into_iter()
                     .rev()
                     .map(|arg| generate_internal(arg, symbols))
                     .flatten()
-                    .chain(once(LabeledBytecode::call(label)))
+                    .chain(label)
                     .collect::<Vec<_>>()
             }
         },
@@ -114,8 +120,10 @@ fn generate_internal(ast: SexprValue<'_>, symbols: &mut SymbolTable) -> Vec<Labe
         SexprValue::Fn {
             eval, arguments, ..
         } => {
+            let anon_label = symbols.new_binding("#anon-fn#").to_string();
+
             let mut to_unload = vec![];
-            let mut preamble = vec![];
+            let mut preamble = vec![LabeledBytecode::Label(anon_label.clone())];
 
             for (binding, _) in arguments {
                 let binding = symbols.new_binding(binding).to_string();
@@ -129,21 +137,23 @@ fn generate_internal(ast: SexprValue<'_>, symbols: &mut SymbolTable) -> Vec<Labe
 
             preamble.extend(vec![LabeledBytecode::ret()]);
 
-            preamble
+            symbols.add_fn(preamble);
+
+            vec![LabeledBytecode::LoadLabel(anon_label)]
         }
         SexprValue::Let { bindings, expr, .. } => {
             let mut result = vec![];
             let mut to_unload = vec![];
             symbols.new_scope();
             for (binding, value) in bindings {
-                let binding = symbols.new_binding(binding).to_string();
                 let data = generate_internal(value, symbols);
-                if matches!(data.last(), Some(LabeledBytecode::Return)) {
+                if let Some(LabeledBytecode::LoadLabel(new_label)) = data.last() {
                     // this means we just bound a function
-                    let mut data = data;
-                    data.insert(0, LabeledBytecode::label(binding.clone()));
-                    symbols.add_fn(data);
+                    // let mut data = data;
+                    // data.insert(0, LabeledBytecode::label(binding.clone()));
+                    symbols.rebind(binding, new_label.clone());
                 } else {
+                    let binding = symbols.new_binding(binding).to_string();
                     result.extend(data);
                     result.push(LabeledBytecode::store(binding.clone()));
                     to_unload.push(LabeledBytecode::unload(binding));
@@ -195,10 +205,18 @@ pub fn generate(
             function_defintions
                 .into_iter()
                 .map(|def| {
-                    let mut bytecode = generate_internal(def.eval, &mut symbols);
-                    bytecode.insert(0, InternalBytecode::label(def.name.to_string()));
+                    // when deffing a function, remove the anon function preamble
+                    // also define own symbol table cause fuck you
+                    let mut symbols = SymbolTable::default();
+                    generate_internal(def.eval, &mut symbols);
 
-                    bytecode
+                    symbols.fns.remove(0);
+
+                    symbols
+                        .fns
+                        .insert(0, InternalBytecode::label(def.name.to_string()));
+
+                    symbols.fns
                 })
                 .flatten(),
         )
@@ -229,6 +247,9 @@ pub fn generate(
                 InternalBytecode::Print => Bytecode::Print,
                 InternalBytecode::Call(value) => Bytecode::Call(value.clone()),
                 InternalBytecode::Load(value) => Bytecode::Load(value.clone()),
+                InternalBytecode::LoadLabel(label) => {
+                    Bytecode::LoadLabel(label_values[label.as_str()])
+                }
                 InternalBytecode::Label(value) => Bytecode::Label(value.clone()),
                 InternalBytecode::Jump(label) => Bytecode::Jump(label_values[label.as_str()]),
                 InternalBytecode::JumpIf(label) => Bytecode::JumpIf(label_values[label.as_str()]),
@@ -254,6 +275,7 @@ pub fn generate(
                         ret
                     }))
                 }
+                InternalBytecode::CallDynamic => Bytecode::CallDynamic,
             })
             .collect(),
         internal,

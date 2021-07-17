@@ -20,6 +20,7 @@ pub enum Value {
     CardId(CardId),
     Bool(bool),
     Some(Box<Value>),
+    Label((usize, ())),
     None,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
@@ -30,6 +31,7 @@ pub enum ValueType {
     CardId,
     Bool,
     Inferred,
+    Label,
     Option(Box<ValueType>),
     Array(Box<ValueType>),
     Fn(Box<FnTypeInfo>),
@@ -70,6 +72,7 @@ impl Display for ValueType {
             ValueType::Fn(fn_type) => write!(f, "{}", fn_type),
             ValueType::Option(ty) => write!(f, "{}?", ty),
             ValueType::Inferred => write!(f, "inferred"),
+            ValueType::Label => write!(f, "label",),
         }
     }
 }
@@ -85,6 +88,7 @@ impl Display for Value {
             Value::Bool(value) => write!(f, "{}: bool", value),
             Value::None => write!(f, "none: ?"),
             Value::Some(inner) => write!(f, "some {}?", inner),
+            Value::Label((inner, _)) => write!(f, "label@{}", inner),
         }
     }
 }
@@ -137,5 +141,6 @@ impl_variant!(Unit, ());
 impl_variant!(Bool, bool);
 impl_variant!(Integer, i32);
 impl_variant!(ArrayLength, usize);
+impl_variant!(Label, (usize, ()));
 impl_variant!(Zone, ZoneId);
 impl_variant!(CardId, CardId);

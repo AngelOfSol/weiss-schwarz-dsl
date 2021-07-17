@@ -16,9 +16,9 @@ fn from_span(span: Span) -> &str {
 pub fn identifier(input: Span) -> IResult<Span, &str> {
     map(
         recognize(pair(
-            one_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"),
+            one_of("-+=abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"),
             many0(one_of(
-                "-_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
+                "-+=_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
             )),
         )),
         from_span,

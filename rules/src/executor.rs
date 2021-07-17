@@ -32,7 +32,7 @@ pub struct ExecutorStack {
 
 #[derive(Default, Debug)]
 pub struct ExecutorHeap {
-    heap: HashMap<usize, Value>,
+    heap: HashMap<usize, Vec<Value>>,
 }
 
 impl Executor {
@@ -85,6 +85,11 @@ impl Executor {
 
                 true
             }
+            Bytecode::LoadLabel(value) => {
+                self.stack.push((value.clone(), ()));
+
+                true
+            }
             Bytecode::Jump(new_ip) => {
                 self.ip = *new_ip;
                 false
@@ -122,6 +127,13 @@ impl Executor {
 
                 true
             }
+
+            Bytecode::CallDynamic => {
+                let (label, _) = self.stack.pop()?;
+                self.ip_stack.push(self.ip);
+                self.ip = label;
+                false
+            }
         };
 
         if advance_intruction_pointer {
@@ -134,21 +146,22 @@ impl Executor {
 
 impl ExecutorHeap {
     pub fn store(&mut self, key: usize, value: Value) {
-        self.heap.insert(key, value);
+        let data = self.heap.entry(key).or_default();
+        data.push(value);
     }
 
     pub fn load(&mut self, key: &usize) -> Result<Value, RuntimeError> {
-        if let Some(value) = self.heap.get(key) {
+        if let Some(value) = self.heap.get(key).and_then(|internal| internal.last()) {
             Ok(value.clone())
         } else {
             Err(RuntimeError::MissingHeapValue(*key))
         }
     }
     pub fn unload(&mut self, key: &usize) -> Result<(), RuntimeError> {
-        if self.heap.remove(key).is_none() {
-            Err(RuntimeError::MissingHeapValue(*key))
-        } else {
+        if let Some(_) = self.heap.get_mut(key).and_then(|inner| inner.pop()) {
             Ok(())
+        } else {
+            Err(RuntimeError::MissingHeapValue(*key))
         }
     }
 }
@@ -215,6 +228,9 @@ lazy_static! {
         "move" => rust_funcs::move_card as ExecutorFn,
         "some" => rust_funcs::some as ExecutorFn,
         "or_default" => rust_funcs::or_default as ExecutorFn,
+        "+" => rust_funcs::add as ExecutorFn,
+        "-" => rust_funcs::sub as ExecutorFn,
+        "==" => rust_funcs::eq as ExecutorFn,
     };
 }
 

@@ -49,3 +49,30 @@ pub fn or_default(executor: &mut Executor, _: &mut Game) -> Result<(), RuntimeEr
         }),
     }
 }
+
+pub fn add(executor: &mut Executor, _: &mut Game) -> Result<(), RuntimeError> {
+    let lhs = executor.stack.pop::<i32>()?;
+    let rhs = executor.stack.pop::<i32>()?;
+
+    executor.stack.push(lhs + rhs);
+
+    Ok(())
+}
+
+pub fn sub(executor: &mut Executor, _: &mut Game) -> Result<(), RuntimeError> {
+    let lhs = executor.stack.pop::<i32>()?;
+    let rhs = executor.stack.pop::<i32>()?;
+
+    executor.stack.push(lhs - rhs);
+
+    Ok(())
+}
+
+pub fn eq(executor: &mut Executor, _: &mut Game) -> Result<(), RuntimeError> {
+    let lhs = executor.stack.pop::<i32>()?;
+    let rhs = executor.stack.pop::<i32>()?;
+
+    executor.stack.push(lhs == rhs);
+
+    Ok(())
+}

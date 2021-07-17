@@ -44,7 +44,9 @@ impl LabeledBytecode {
 pub enum InternalBytecode<LabelType> {
     Print,
     Call(String),
+    CallDynamic,
     Load(Value),
+    LoadLabel(LabelType),
     Jump(LabelType),
     JumpIf(LabelType),
     Store(LabelType),
@@ -61,6 +63,7 @@ impl<LabelType: Display> Display for InternalBytecode<LabelType> {
             InternalBytecode::Print => write!(f, "print"),
             InternalBytecode::Call(name) => write!(f, "call {}", name),
             InternalBytecode::Load(value) => write!(f, "load {}", value),
+            InternalBytecode::LoadLabel(value) => write!(f, "load {}", value),
             InternalBytecode::Jump(label) => write!(f, "jump '{}", label),
             InternalBytecode::JumpIf(label) => write!(f, "jump-if-true '{}", label),
             InternalBytecode::Label(label) => write!(f, "'{}:", label),
@@ -68,6 +71,7 @@ impl<LabelType: Display> Display for InternalBytecode<LabelType> {
             InternalBytecode::Store(name) => write!(f, "store @{}", name),
             InternalBytecode::LoadRef(name) => write!(f, "load-ref @{}", name),
             InternalBytecode::Unload(name) => write!(f, "unload @{}", name),
+            InternalBytecode::CallDynamic => write!(f, "call-dynamic"),
         }
     }
 }
