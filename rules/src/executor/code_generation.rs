@@ -73,31 +73,34 @@ impl SymbolTable {
 
 fn generate_internal(ast: Sexpr<'_>, symbols: &mut SymbolTable) -> Vec<LabeledBytecode> {
     match ast {
-        Sexpr::Eval {
-            target,
-            mut arguments,
-            ..
-        } => match target {
-            "print" => {
-                let mut res = generate_internal(arguments.remove(0), symbols);
-                res.push(LabeledBytecode::Print);
-                res
-            }
-            _ => {
-                let label = symbols
-                    .get_binding(target)
-                    .map(|label| vec![LabeledBytecode::Call(label.to_string())])
-                    .unwrap_or_else(|| vec![LabeledBytecode::Call(target.to_string())]);
+        Sexpr::Eval { mut arguments, .. } => {
+            let target = if let Sexpr::Symbol(target, ..) = arguments.remove(0) {
+                target
+            } else {
+                panic!()
+            };
+            match target {
+                "print" => {
+                    let mut res = generate_internal(arguments.remove(0), symbols);
+                    res.push(LabeledBytecode::Print);
+                    res
+                }
+                _ => {
+                    let label = symbols
+                        .get_binding(target)
+                        .map(|label| vec![LabeledBytecode::Call(label.to_string())])
+                        .unwrap_or_else(|| vec![LabeledBytecode::Call(target.to_string())]);
 
-                arguments
-                    .into_iter()
-                    .rev()
-                    .map(|arg| generate_internal(arg, symbols))
-                    .flatten()
-                    .chain(label)
-                    .collect::<Vec<_>>()
+                    arguments
+                        .into_iter()
+                        .rev()
+                        .map(|arg| generate_internal(arg, symbols))
+                        .flatten()
+                        .chain(label)
+                        .collect::<Vec<_>>()
+                }
             }
-        },
+        }
         Sexpr::Symbol(binding, ..) => {
             vec![LabeledBytecode::LoadRef(
                 symbols.get_binding(binding).unwrap().to_string(),

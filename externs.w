@@ -1,0 +1,8 @@
+(extern card fn(i32) -> card)
+(extern print fn(T) -> T)
+(extern move fn(card, zone) -> zone)
+(extern some fn(T) -> ?T)
+(extern or_default fn(?T, T) -> T)
+(extern + fn(i32, i32) -> i32)
+(extern - fn(i32, i32) -> i32)
+(extern == fn(i32, i32) -> bool)

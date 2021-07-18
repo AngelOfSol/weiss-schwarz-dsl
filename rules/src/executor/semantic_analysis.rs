@@ -8,8 +8,8 @@ use crate::{
         error::{CompileError, SymbolError},
         semantic_analysis::{
             hm::{
-                infer, type_environment::TypeEnvironment, type_tree::build_type_tree, Fresh,
-                TypedAst,
+                infer, type_environment::TypeEnvironment, type_tree::build_type_tree, types::Type,
+                Fresh, TypedAst,
             },
             symbol_validity::check_symbol_validity,
         },
@@ -20,37 +20,11 @@ use crate::{
 
 pub type SymbolTable<'a> = HashSet<&'a str>;
 
-trait VerifySexpr {
-    fn valid_target<'a, 'b, I>(&'a self, targets: I) -> Result<(), SymbolError<'a>>
-    where
-        I: Iterator<Item = &'a str> + 'b;
-}
-
-impl<'sexpr> VerifySexpr for Sexpr<'sexpr> {
-    fn valid_target<'a, 'b, I>(&'a self, mut targets: I) -> Result<(), SymbolError<'a>>
-    where
-        I: Iterator<Item = &'a str> + 'b,
-    {
-        if let Sexpr::Eval { target, span, .. } = self {
-            if targets.any(|item| item == *target) {
-                Ok(())
-            } else {
-                Err(SymbolError::InvalidFn {
-                    name: target,
-                    span: *span,
-                })
-            }
-        } else {
-            Ok(())
-        }
-    }
-}
-
 pub fn semantic_analysis<'a>(
     ast: &'a Sexpr,
     externs: &Vec<ExternDeclaration<'a>>,
     definitions: &'a Vec<FunctionDefinition<'a>>,
-) -> Result<(), CompileError<'a>> {
+) -> Result<TypedAst<'a>, CompileError<'a>> {
     let symbol_table = externs
         .iter()
         .map(|item| item.name)
@@ -93,6 +67,7 @@ pub fn semantic_analysis<'a>(
             .map(|def| (def.name, build_type_tree(def.eval.clone(), &mut fresh)))
             .collect(),
         span: *data.span(),
+        ty: Type::Var(fresh.next(), *data.span()),
         expr: Box::new(data),
     };
 
@@ -102,5 +77,12 @@ pub fn semantic_analysis<'a>(
 
     env.apply(&program_sub);
 
-    Ok(())
+    Ok({
+        let mut upper = upper;
+        println!("{}", program_sub);
+        println!("{}", upper);
+        upper.apply(&program_sub);
+        println!("{}", upper);
+        upper
+    })
 }

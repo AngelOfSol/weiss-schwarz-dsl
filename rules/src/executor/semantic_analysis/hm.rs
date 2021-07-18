@@ -26,8 +26,10 @@ pub(crate) fn infer<'a>(
     tt: &TypedAst<'a>,
 ) -> Result<(Substitution<'a>, Type<'a>), TypeError<'a>> {
     match tt {
-        TypedAst::Call { children, span, .. } => {
-            let fresh_type_variable = Type::Var(fresh.next(), *span);
+        TypedAst::Call {
+            children, span, ty, ..
+        } => {
+            let fresh_type_variable = ty.clone();
 
             let (mut sub, fn_type) = infer(env, fresh, &children[0])?;
 
@@ -48,7 +50,9 @@ pub(crate) fn infer<'a>(
 
             Ok((sub.union(unified), ty))
         }
-        TypedAst::Let { bindings, expr, .. } => {
+        TypedAst::Let {
+            bindings, expr, ty, ..
+        } => {
             let mut sub = Substitution::default();
             let mut env = env.clone();
 
@@ -88,19 +92,24 @@ pub(crate) fn infer<'a>(
                 sub = sub.union(unified_sub);
             }
 
-            let (expr, ty) = infer(&mut env, fresh, expr)?;
+            let (expr, result_ty) = infer(&mut env, fresh, expr)?;
 
-            Ok((sub.union(expr), ty))
+            let unified = unify(result_ty.clone(), ty.clone())?;
+
+            Ok((sub.union(expr).union(unified), result_ty))
         }
-        TypedAst::Binding { name, span } => Ok((Substitution::default(), {
-            env.map.get(*name).unwrap().new_vars(fresh).with_span(*span)
-        })),
+        TypedAst::Binding { name, span, ty } => {
+            let env_ty = env.map.get(*name).unwrap().new_vars(fresh).with_span(*span);
+
+            Ok((unify(env_ty.clone(), ty.clone())?, env_ty))
+        }
         TypedAst::Value { ty, .. } => Ok((Substitution::default(), ty.clone())),
         TypedAst::Fn {
             bindings,
             expr,
             span,
             return_type,
+            ty,
             ..
         } => {
             let mut env = env.clone();
@@ -113,14 +122,6 @@ pub(crate) fn infer<'a>(
                     .collect(),
                 *span,
             );
-
-            let decl_remap = decl_ty
-                .free_variables()
-                .into_iter()
-                .map(|old| (old, fresh.next()))
-                .collect();
-
-            let decl_ty = decl_ty.remap(&decl_remap);
 
             let parameters = bindings
                 .iter()
@@ -139,25 +140,29 @@ pub(crate) fn infer<'a>(
                 })
                 .collect::<Vec<_>>();
 
-            let (sub, ty) = infer(&mut env, fresh, expr)?;
+            let (sub, inferred) = infer(&mut env, fresh, expr)?;
 
             let parameters = parameters
                 .into_iter()
                 .map(|ty| ty.apply(&sub))
-                .chain(once(ty.apply(&sub)))
+                .chain(once(inferred.apply(&sub)))
                 .collect::<Vec<_>>();
 
-            let result_ty = Type::function(parameters.clone(), *ty.span());
+            let result_ty = Type::function(parameters.clone(), *inferred.span());
 
             // this checks to make sure that our declaration and our inferred types match properly
             let new_sub = unify(decl_ty, result_ty.clone())?;
 
             let result_ty = result_ty.apply(&new_sub);
 
-            Ok((sub.union(new_sub), result_ty))
+            let last_sub = unify(ty.clone(), result_ty.clone())?;
+
+            Ok((sub.union(new_sub).union(last_sub), result_ty))
         }
         TypedAst::Seq {
-            sub_expressions, ..
+            sub_expressions,
+            ty,
+            ..
         } => {
             let mut sub = Substitution::default();
             let mut resulting_types = sub_expressions
@@ -169,9 +174,13 @@ pub(crate) fn infer<'a>(
                 })
                 .collect::<Result<Vec<_>, _>>()?;
 
-            Ok((sub, resulting_types.pop().unwrap()))
+            let result_ty = resulting_types.pop().unwrap();
+
+            let last_sub = unify(ty.clone(), result_ty.clone())?;
+
+            Ok((sub.union(last_sub), result_ty))
         }
-        TypedAst::Array { values, span } => {
+        TypedAst::Array { values, span, ty } => {
             let mut sub = Substitution::default();
             let mut resulting_types = values
                 .iter()
@@ -183,8 +192,11 @@ pub(crate) fn infer<'a>(
                 .collect::<Result<BTreeSet<_>, _>>()?;
 
             if resulting_types.len() == 1 {
-                let ty = resulting_types.pop_first().unwrap();
-                Ok((sub, Type::array(ty, *span)))
+                let result_ty = Type::array(resulting_types.pop_first().unwrap(), *span);
+
+                let last_sub = unify(ty.clone(), result_ty.clone())?;
+
+                Ok((sub.union(last_sub), result_ty))
             } else {
                 Err(TypeError::InvalidArray {
                     found: resulting_types,
@@ -196,6 +208,7 @@ pub(crate) fn infer<'a>(
             condition,
             if_true,
             if_false,
+            ty,
             ..
         } => {
             let mut sub = Substitution::default();
@@ -212,6 +225,10 @@ pub(crate) fn infer<'a>(
             let unified = unify(if_true.clone(), if_false)?;
 
             sub = sub.union(unified);
+
+            let last_sub = unify(ty.clone(), if_true.clone())?;
+
+            sub = sub.union(last_sub);
 
             Ok((sub, if_true))
         }

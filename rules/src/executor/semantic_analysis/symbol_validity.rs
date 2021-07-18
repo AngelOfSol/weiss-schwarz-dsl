@@ -1,8 +1,5 @@
 use crate::{
-    executor::{
-        error::SymbolError,
-        semantic_analysis::{SymbolTable, VerifySexpr},
-    },
+    executor::{error::SymbolError, semantic_analysis::SymbolTable},
     parsing::Sexpr,
 };
 
@@ -11,18 +8,12 @@ pub fn check_symbol_validity<'a>(
     mut symbols: SymbolTable<'a>,
 ) -> Result<(), SymbolError<'a>> {
     match ast {
-        s @ Sexpr::Eval {
-            target, arguments, ..
-        } => match *target {
-            "print" => check_symbol_validity(&arguments[0], symbols),
-            _ => {
-                for argument in arguments.iter() {
-                    check_symbol_validity(argument, symbols.clone())?;
-                }
-
-                s.valid_target(symbols.iter().copied())
+        s @ Sexpr::Eval { arguments, .. } => {
+            for argument in arguments.iter() {
+                check_symbol_validity(argument, symbols.clone())?;
             }
-        },
+            Ok(())
+        }
         Sexpr::Array { values, .. } => {
             for argument in values.iter() {
                 check_symbol_validity(argument, symbols.clone())?;

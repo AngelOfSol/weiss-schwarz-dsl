@@ -1,14 +1,16 @@
 use nom::{
-    bytes::complete::tag,
+    bytes::complete::{tag, take_until},
     character::complete::{multispace0, one_of},
     combinator::{map, not, recognize, value},
     error::ParseError,
     multi::{many0, many1},
     sequence::{delimited, pair},
-    AsChar, IResult, InputIter, InputLength, InputTake, InputTakeAtPosition,
+    AsChar, IResult as NomResult, InputIter, InputLength, InputTake, InputTakeAtPosition,
 };
 
 use crate::parsing::Span;
+
+pub type IResult<I, O, E = nom::error::VerboseError<I>> = NomResult<I, O, E>;
 
 fn from_span(span: Span) -> &str {
     *span.fragment()
@@ -44,11 +46,7 @@ pub fn number(input: Span) -> IResult<Span, i32> {
 
 pub fn raw_string(input: Span) -> IResult<Span, &str> {
     map(
-        ws(delimited(
-            tag("\""),
-            recognize(many0(not(tag("\"")))),
-            tag("\""),
-        )),
+        ws(delimited(tag("\""), recognize(take_until("\"")), tag("\""))),
         from_span,
     )(input)
 }

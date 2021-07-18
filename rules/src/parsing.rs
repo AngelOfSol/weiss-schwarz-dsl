@@ -1,6 +1,6 @@
 pub mod lexing;
 
-use std::{cell::RefCell, collections::HashMap, fmt::Display, iter::once};
+use std::{cell::RefCell, collections::HashMap, fmt::Display};
 
 use nom::{
     branch::alt,
@@ -8,7 +8,7 @@ use nom::{
     combinator::{consumed, map, map_opt, opt, recognize, value},
     multi::{many0, many1, separated_list0},
     sequence::{delimited, pair, preceded, tuple},
-    IResult,
+    IResult as NomResult,
 };
 use nom_locate::LocatedSpan;
 
@@ -22,15 +22,16 @@ pub type SpanFileName<'a> = &'a str;
 
 pub type Span<'a> = LocatedSpan<&'a str, SpanFileName<'a>>;
 
+pub type IResult<I, O, E = nom::error::VerboseError<I>> = NomResult<I, O, E>;
+
 pub fn parse_sexpr(input: Span) -> IResult<Span, Sexpr> {
     map(
         consumed(delimited(
             lexing::open,
-            tuple((lexing::identifier, many0(parse_sexpr_value))),
+            many1(parse_sexpr_value),
             lexing::close,
         )),
-        |(span, (symbol, arguments))| Sexpr::Eval {
-            target: symbol,
+        |(span, arguments)| Sexpr::Eval {
             arguments,
             span: span,
         },
@@ -124,7 +125,7 @@ pub fn parse_fn<'a>(input: Span<'a>) -> IResult<Span<'a>, Sexpr<'a>> {
         )),
         |(span, (arguments, (ret_span, return_type), eval))| Sexpr::Fn {
             arguments: arguments,
-            return_type: return_type.unwrap_or(Type::type_var(fresh.borrow_mut().next(), ret_span)),
+            return_type: return_type,
             eval: Box::new(eval),
             span,
         },
@@ -280,7 +281,6 @@ pub fn parse_unit(input: Span) -> IResult<Span, Sexpr> {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Sexpr<'a> {
     Eval {
-        target: &'a str,
         arguments: Vec<Sexpr<'a>>,
         span: Span<'a>,
     },
@@ -296,7 +296,7 @@ pub enum Sexpr<'a> {
     },
     Fn {
         arguments: Vec<(&'a str, Type<'a>)>,
-        return_type: Type<'a>,
+        return_type: Option<Type<'a>>,
         eval: Box<Sexpr<'a>>,
         span: Span<'a>,
     },
@@ -330,13 +330,10 @@ impl<'a> Sexpr<'a> {
 impl<'a> Display for Sexpr<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Sexpr::Eval {
-                target, arguments, ..
-            } => {
+            Sexpr::Eval { arguments, .. } => {
                 write!(
                     f,
-                    "({} {})",
-                    target,
+                    "({})",
                     arguments
                         .iter()
                         .fold(String::new(), |acc, inner| format!("{} {}", acc, inner))
@@ -360,7 +357,9 @@ impl<'a> Display for Sexpr<'a> {
                     .map(|(name, ty)| format!("{}: {}", name, ty))
                     .collect::<Vec<_>>()
                     .join(","),
-                return_type,
+                return_type
+                    .as_ref()
+                    .unwrap_or(&Type::unit(Span::new_extra("", ""))),
                 eval
             ),
             Sexpr::If {
@@ -413,10 +412,16 @@ pub struct ExternDeclaration<'a> {
     pub span: Span<'a>,
 }
 
+#[derive(Debug, Clone)]
+pub struct Include<'a> {
+    pub path: &'a str,
+}
+
 #[derive(Debug)]
 enum Preamble<'a> {
     Extern(ExternDeclaration<'a>),
     Definition(FunctionDefinition<'a>),
+    Include(Include<'a>),
 }
 
 impl<'a> Preamble<'a> {
@@ -435,33 +440,65 @@ impl<'a> Preamble<'a> {
             Err(self)
         }
     }
+
+    fn try_into_include(self) -> Result<Include<'a>, Self> {
+        if let Self::Include(v) = self {
+            Ok(v)
+        } else {
+            Err(self)
+        }
+    }
 }
 
 pub fn parse_program(
     input: Span,
-) -> IResult<Span, (Vec<ExternDeclaration>, Vec<FunctionDefinition>, Sexpr)> {
+) -> IResult<
+    Span,
+    (
+        Vec<ExternDeclaration>,
+        Vec<FunctionDefinition>,
+        Vec<Include>,
+        Sexpr,
+    ),
+> {
     map(
         tuple((
             many0(alt((
                 map(parse_extern, Preamble::Extern),
                 map(parse_fn_definition, Preamble::Definition),
+                map(parse_include, Preamble::Include),
             ))),
-            parse_sexpr_value,
+            consumed(many0(parse_sexpr_value)),
         )),
-        |(preambles, program)| {
-            let (lhs, rhs) = preambles
+        |(preambles, (span, sub_expressions))| {
+            let (externs, preambles) = preambles
                 .into_iter()
                 .partition::<Vec<_>, _>(|value| matches!(value, Preamble::Extern(..)));
-            let externs: Vec<_> = lhs
+            let externs: Vec<_> = externs
                 .into_iter()
                 .map(|item| item.try_into_extern().ok().unwrap())
                 .collect();
-            let definitions: Vec<_> = rhs
+            let (definitions, includes) = preambles
+                .into_iter()
+                .partition::<Vec<_>, _>(|value| matches!(value, Preamble::Definition(..)));
+            let definitions: Vec<_> = definitions
                 .into_iter()
                 .map(|item| item.try_into_definition().ok().unwrap())
                 .collect();
+            let includes: Vec<_> = includes
+                .into_iter()
+                .map(|item| item.try_into_include().ok().unwrap())
+                .collect();
 
-            (externs, definitions, program)
+            (
+                externs,
+                definitions,
+                includes,
+                Sexpr::Seq {
+                    sub_expressions,
+                    span,
+                },
+            )
         },
     )(input)
 }
@@ -489,7 +526,6 @@ pub struct FunctionDefinition<'a> {
     pub name: &'a str,
     pub eval: Sexpr<'a>,
     pub span: Span<'a>,
-    pub ty: Type<'a>,
 }
 
 pub fn parse_fn_definition(input: Span) -> IResult<Span, FunctionDefinition> {
@@ -499,32 +535,17 @@ pub fn parse_fn_definition(input: Span) -> IResult<Span, FunctionDefinition> {
             preceded(ws(tag("define")), pair(lexing::identifier, ws(parse_fn))),
             lexing::close,
         )),
-        |(span, (name, eval))| {
-            let ty = if let Sexpr::Fn {
-                arguments,
-                return_type,
-                span,
-                ..
-            } = &eval
-            {
-                Type::function(
-                    arguments
-                        .iter()
-                        .map(|(_, ty)| ty.clone())
-                        .chain(once(return_type.clone()))
-                        .collect(),
-                    *span,
-                )
-            } else {
-                unreachable!()
-            };
+        |(span, (name, eval))| FunctionDefinition { name, eval, span },
+    )(input)
+}
 
-            FunctionDefinition {
-                name,
-                eval,
-                span,
-                ty,
-            }
-        },
+pub fn parse_include(input: Span) -> IResult<Span, Include> {
+    map(
+        delimited(
+            lexing::open,
+            preceded(ws(tag("include")), lexing::raw_string),
+            lexing::close,
+        ),
+        |path| Include { path },
     )(input)
 }

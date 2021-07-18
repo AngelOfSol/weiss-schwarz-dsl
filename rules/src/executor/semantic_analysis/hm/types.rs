@@ -172,21 +172,6 @@ impl<'a> Type<'a> {
         }
     }
 
-    pub(crate) fn remap(self, changes: &BTreeMap<TypeVariable, TypeVariable>) -> Self {
-        match self {
-            Type::Constant {
-                name,
-                parameters,
-                span,
-            } => Type::Constant {
-                name: name,
-                parameters: parameters.into_iter().map(|ty| ty.remap(changes)).collect(),
-                span,
-            },
-            Type::Var(v, span) => Type::Var(*changes.get(&v).unwrap_or(&v), span),
-        }
-    }
-
     pub(crate) fn instantiate(self, left: TypeVariable, right: TypeVariable) -> Self {
         match self {
             Type::Constant {
@@ -222,7 +207,7 @@ impl<'a> Type<'a> {
     }
     pub(crate) fn apply(&self, rules: &Substitution<'a>) -> Self {
         let mut ret = self.clone();
-        for (left, ty) in rules.map.iter().rev() {
+        for (left, ty) in rules.map.iter() {
             ret.apply_rule(left, ty)
         }
         ret
