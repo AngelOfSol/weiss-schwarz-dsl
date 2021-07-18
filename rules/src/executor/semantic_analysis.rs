@@ -7,7 +7,10 @@ use crate::{
     executor::{
         error::{CompileError, SymbolError},
         semantic_analysis::{
-            hm::{build_type_tree, infer, type_environment::TypeEnvironment, Fresh, TypeTree},
+            hm::{
+                infer, type_environment::TypeEnvironment, type_tree::build_type_tree, Fresh,
+                TypeTree,
+            },
             symbol_validity::check_symbol_validity,
         },
         RUST_FN,

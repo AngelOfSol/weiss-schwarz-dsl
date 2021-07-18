@@ -3,7 +3,7 @@ use std::fmt::Display;
 use crate::executor::semantic_analysis::hm::types::{Type, TypeVariable};
 
 #[derive(Clone, Default, Debug)]
-pub(crate) struct Substitution<'a> {
+pub struct Substitution<'a> {
     pub map: Vec<(TypeVariable, Type<'a>)>,
 }
 
