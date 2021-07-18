@@ -2,7 +2,7 @@ use std::{collections::HashMap, convert::TryInto, iter::once};
 
 use crate::{
     executor::{
-        bytecode::{Bytecode, LabeledBytecode},
+        bytecode::{ExecutableBytecode, LabeledBytecode},
         value::Value,
     },
     parsing::{FunctionDefinition, Sexpr},
@@ -80,14 +80,14 @@ fn generate_internal(ast: Sexpr<'_>, symbols: &mut SymbolTable) -> Vec<LabeledBy
         } => match target {
             "print" => {
                 let mut res = generate_internal(arguments.remove(0), symbols);
-                res.push(LabeledBytecode::print());
+                res.push(LabeledBytecode::Print);
                 res
             }
             _ => {
                 let label = symbols
                     .get_binding(target)
-                    .map(|label| vec![LabeledBytecode::call(label.to_string())])
-                    .unwrap_or_else(|| vec![LabeledBytecode::call(target.to_string())]);
+                    .map(|label| vec![LabeledBytecode::Call(label.to_string())])
+                    .unwrap_or_else(|| vec![LabeledBytecode::Call(target.to_string())]);
 
                 arguments
                     .into_iter()
@@ -99,7 +99,7 @@ fn generate_internal(ast: Sexpr<'_>, symbols: &mut SymbolTable) -> Vec<LabeledBy
             }
         },
         Sexpr::Symbol(binding, ..) => {
-            vec![LabeledBytecode::load_ref(
+            vec![LabeledBytecode::LoadRef(
                 symbols.get_binding(binding).unwrap().to_string(),
             )]
         }
@@ -109,14 +109,14 @@ fn generate_internal(ast: Sexpr<'_>, symbols: &mut SymbolTable) -> Vec<LabeledBy
                 .into_iter()
                 .map(|inner| generate_internal(inner, symbols))
                 .flatten()
-                .chain(once(LabeledBytecode::load(Value::ArrayLength(len))))
+                .chain(once(LabeledBytecode::Load(Value::ArrayLength(len))))
                 .collect::<Vec<_>>()
         }
         rest @ Sexpr::None(..)
         | rest @ Sexpr::Zone(..)
         | rest @ Sexpr::Bool(..)
         | rest @ Sexpr::Unit(..)
-        | rest @ Sexpr::Integer(..) => vec![LabeledBytecode::load(rest.try_into().unwrap())],
+        | rest @ Sexpr::Integer(..) => vec![LabeledBytecode::Load(rest.try_into().unwrap())],
         Sexpr::Fn {
             eval, arguments, ..
         } => {
@@ -127,15 +127,15 @@ fn generate_internal(ast: Sexpr<'_>, symbols: &mut SymbolTable) -> Vec<LabeledBy
 
             for (binding, _) in arguments {
                 let binding = symbols.new_binding(binding).to_string();
-                preamble.push(LabeledBytecode::store(binding.clone()));
-                to_unload.push(LabeledBytecode::unload(binding));
+                preamble.push(LabeledBytecode::Store(binding.clone()));
+                to_unload.push(LabeledBytecode::Unload(binding));
             }
 
             preamble.extend(generate_internal(*eval, symbols));
 
             preamble.extend(to_unload);
 
-            preamble.extend(vec![LabeledBytecode::ret()]);
+            preamble.extend(vec![LabeledBytecode::Return]);
 
             symbols.add_fn(preamble);
 
@@ -155,8 +155,8 @@ fn generate_internal(ast: Sexpr<'_>, symbols: &mut SymbolTable) -> Vec<LabeledBy
                 } else {
                     let binding = symbols.new_binding(binding).to_string();
                     result.extend(data);
-                    result.push(LabeledBytecode::store(binding.clone()));
-                    to_unload.push(LabeledBytecode::unload(binding));
+                    result.push(LabeledBytecode::Store(binding.clone()));
+                    to_unload.push(LabeledBytecode::Unload(binding));
                 }
             }
             result.extend(generate_internal(*expr, symbols));
@@ -175,10 +175,10 @@ fn generate_internal(ast: Sexpr<'_>, symbols: &mut SymbolTable) -> Vec<LabeledBy
             condition.push(InternalBytecode::JumpIf(true_label.clone()));
             let mut if_false = generate_internal(*if_false, symbols);
             if_false.push(InternalBytecode::Jump(end_label.clone()));
-            if_false.push(InternalBytecode::label(true_label));
+            if_false.push(InternalBytecode::Label(true_label));
             let mut if_true = generate_internal(*if_true, symbols);
             // need to add "symbol table" etc so it can generate fresh labels
-            if_true.push(InternalBytecode::label(end_label));
+            if_true.push(InternalBytecode::Label(end_label));
             vec![condition, if_false, if_true]
                 .into_iter()
                 .flatten()
@@ -195,7 +195,11 @@ fn generate_internal(ast: Sexpr<'_>, symbols: &mut SymbolTable) -> Vec<LabeledBy
 pub fn generate(
     ast: Sexpr<'_>,
     function_defintions: Vec<FunctionDefinition<'_>>,
-) -> (Vec<Bytecode>, Vec<LabeledBytecode>, HashMap<String, usize>) {
+) -> (
+    Vec<ExecutableBytecode>,
+    Vec<LabeledBytecode>,
+    HashMap<String, usize>,
+) {
     let mut symbols = SymbolTable::default();
     let internal = generate_internal(ast, &mut symbols);
     let internal = internal
@@ -214,7 +218,7 @@ pub fn generate(
 
                     symbols
                         .fns
-                        .insert(0, InternalBytecode::label(def.name.to_string()));
+                        .insert(0, InternalBytecode::Label(def.name.to_string()));
 
                     symbols.fns
                 })
@@ -244,38 +248,42 @@ pub fn generate(
         internal
             .iter()
             .map(|x| match x {
-                InternalBytecode::Print => Bytecode::Print,
-                InternalBytecode::Call(value) => Bytecode::Call(value.clone()),
-                InternalBytecode::Load(value) => Bytecode::Load(value.clone()),
+                InternalBytecode::Print => ExecutableBytecode::Print,
+                InternalBytecode::Call(value) => ExecutableBytecode::Call(value.clone()),
+                InternalBytecode::Load(value) => ExecutableBytecode::Load(value.clone()),
                 InternalBytecode::LoadLabel(label) => {
-                    Bytecode::LoadLabel(label_values[label.as_str()])
+                    ExecutableBytecode::LoadLabel(label_values[label.as_str()])
                 }
-                InternalBytecode::Label(value) => Bytecode::Label(value.clone()),
-                InternalBytecode::Jump(label) => Bytecode::Jump(label_values[label.as_str()]),
-                InternalBytecode::JumpIf(label) => Bytecode::JumpIf(label_values[label.as_str()]),
-                InternalBytecode::Return => Bytecode::Return,
+                InternalBytecode::Label(value) => ExecutableBytecode::Label(value.clone()),
+                InternalBytecode::Jump(label) => {
+                    ExecutableBytecode::Jump(label_values[label.as_str()])
+                }
+                InternalBytecode::JumpIf(label) => {
+                    ExecutableBytecode::JumpIf(label_values[label.as_str()])
+                }
+                InternalBytecode::Return => ExecutableBytecode::Return,
                 InternalBytecode::Store(binding) => {
-                    Bytecode::Store(*bindings.entry(binding).or_insert_with(|| {
+                    ExecutableBytecode::Store(*bindings.entry(binding).or_insert_with(|| {
                         let ret = next_binding;
                         next_binding += 1;
                         ret
                     }))
                 }
                 InternalBytecode::LoadRef(binding) => {
-                    Bytecode::LoadRef(*bindings.entry(binding).or_insert_with(|| {
+                    ExecutableBytecode::LoadRef(*bindings.entry(binding).or_insert_with(|| {
                         let ret = next_binding;
                         next_binding += 1;
                         ret
                     }))
                 }
                 InternalBytecode::Unload(binding) => {
-                    Bytecode::Unload(*bindings.entry(binding).or_insert_with(|| {
+                    ExecutableBytecode::Unload(*bindings.entry(binding).or_insert_with(|| {
                         let ret = next_binding;
                         next_binding += 1;
                         ret
                     }))
                 }
-                InternalBytecode::CallDynamic => Bytecode::CallDynamic,
+                InternalBytecode::CallDynamic => ExecutableBytecode::CallDynamic,
             })
             .collect(),
         internal,

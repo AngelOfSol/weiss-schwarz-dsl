@@ -85,12 +85,12 @@ pub fn semantic_analysis<'a>(
     }
     check_symbol_validity(ast, symbol_table)?;
 
-    let data = build_type_tree(ast, &mut fresh);
+    let data = build_type_tree(ast.clone(), &mut fresh);
 
     let upper = TypedAst::Let {
         bindings: definitions
             .iter()
-            .map(|def| (def.name, build_type_tree(&def.eval, &mut fresh)))
+            .map(|def| (def.name, build_type_tree(def.eval.clone(), &mut fresh)))
             .collect(),
         span: *data.span(),
         expr: Box::new(data),

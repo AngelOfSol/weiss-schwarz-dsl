@@ -1,11 +1,12 @@
 pub mod bytecode;
 pub mod code_generation;
 pub mod error;
+pub mod new_code_gen;
 pub mod rust_funcs;
 pub mod semantic_analysis;
 pub mod value;
 
-use crate::executor::{bytecode::Bytecode, error::RuntimeError};
+use crate::executor::{bytecode::ExecutableBytecode, error::RuntimeError};
 use crate::{
     executor::value::{Value, ValueFrom, ValueType},
     model::Game,
@@ -19,7 +20,7 @@ use std::{collections::HashMap, fmt::Display};
 pub struct Executor {
     pub stack: ExecutorStack,
     pub heap: ExecutorHeap,
-    pub bytecode: Vec<Bytecode>,
+    pub bytecode: Vec<ExecutableBytecode>,
     pub ip: usize,
     pub ip_stack: Vec<usize>,
     pub labels: HashMap<String, usize>,
@@ -45,7 +46,7 @@ impl Executor {
         let mut ret = String::new();
 
         let advance_intruction_pointer = match code {
-            Bytecode::Print => {
+            ExecutableBytecode::Print => {
                 let value = self.stack.pop_any()?;
                 match value {
                     Value::ArrayLength(len) => {
@@ -68,7 +69,7 @@ impl Executor {
                 }
                 true
             }
-            Bytecode::Call(name) => {
+            ExecutableBytecode::Call(name) => {
                 if let Some(func) = RUST_FN.get(name.as_str()) {
                     func(self, game)?;
                     true
@@ -80,21 +81,21 @@ impl Executor {
                     return Err(RuntimeError::InvalidFn(name.clone()));
                 }
             }
-            Bytecode::Load(value) => {
+            ExecutableBytecode::Load(value) => {
                 self.stack.push_any(value.clone());
 
                 true
             }
-            Bytecode::LoadLabel(value) => {
+            ExecutableBytecode::LoadLabel(value) => {
                 self.stack.push((value.clone(), ()));
 
                 true
             }
-            Bytecode::Jump(new_ip) => {
+            ExecutableBytecode::Jump(new_ip) => {
                 self.ip = *new_ip;
                 false
             }
-            Bytecode::JumpIf(new_ip) => {
+            ExecutableBytecode::JumpIf(new_ip) => {
                 if self.stack.pop()? {
                     self.ip = *new_ip;
                     false
@@ -102,7 +103,7 @@ impl Executor {
                     true
                 }
             }
-            Bytecode::Return => {
+            ExecutableBytecode::Return => {
                 self.ip = self
                     .ip_stack
                     .pop()
@@ -110,25 +111,25 @@ impl Executor {
                 true
             }
             // NO-OP
-            Bytecode::Label(_) => true,
-            Bytecode::Store(idx) => {
+            ExecutableBytecode::Label(_) => true,
+            ExecutableBytecode::Store(idx) => {
                 let value = self.stack.pop_any()?;
                 self.heap.store(*idx, value);
 
                 true
             }
-            Bytecode::LoadRef(idx) => {
+            ExecutableBytecode::LoadRef(idx) => {
                 self.stack.push_any(self.heap.load(idx)?);
 
                 true
             }
-            Bytecode::Unload(idx) => {
+            ExecutableBytecode::Unload(idx) => {
                 self.heap.unload(idx)?;
 
                 true
             }
 
-            Bytecode::CallDynamic => {
+            ExecutableBytecode::CallDynamic => {
                 let (label, _) = self.stack.pop()?;
                 self.ip_stack.push(self.ip);
                 self.ip = label;

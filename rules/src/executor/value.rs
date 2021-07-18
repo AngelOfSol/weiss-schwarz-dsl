@@ -15,7 +15,7 @@ pub trait ValueFrom: Sized {
 pub enum Value {
     Integer(i32),
     ArrayLength(usize),
-    Unit(()),
+    Unit,
     Zone(ZoneId),
     CardId(CardId),
     Bool(bool),
@@ -82,7 +82,7 @@ impl Display for Value {
         match self {
             Value::Integer(value) => write!(f, "{}: i32", value),
             Value::ArrayLength(value) => write!(f, "{}: array_length", value),
-            Value::Unit(_) => write!(f, "(): unit"),
+            Value::Unit => write!(f, "(): unit"),
             Value::Zone(value) => write!(f, "{}: zone", value),
             Value::CardId(value) => write!(f, "{}: card", value.0),
             Value::Bool(value) => write!(f, "{}: bool", value),
@@ -100,7 +100,7 @@ impl<'a> TryFrom<Sexpr<'a>> for Value {
         match value {
             Sexpr::Integer(integer, ..) => Ok(Value::Integer(integer)),
             Sexpr::Zone(zone, ..) => Ok(Value::Zone(zone)),
-            Sexpr::Unit(..) => Ok(Value::Unit(())),
+            Sexpr::Unit(..) => Ok(Value::Unit),
             Sexpr::Bool(value, ..) => Ok(Value::Bool(value)),
             Sexpr::None(..) => Ok(Value::None),
             x @ Sexpr::Array { .. }
@@ -137,7 +137,6 @@ macro_rules! impl_variant {
     };
 }
 
-impl_variant!(Unit, ());
 impl_variant!(Bool, bool);
 impl_variant!(Integer, i32);
 impl_variant!(ArrayLength, usize);

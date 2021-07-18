@@ -95,7 +95,7 @@ pub(crate) fn infer<'a>(
         TypedAst::Binding { name, span } => Ok((Substitution::default(), {
             env.map.get(*name).unwrap().new_vars(fresh).with_span(*span)
         })),
-        TypedAst::Value { ty } => Ok((Substitution::default(), ty.clone())),
+        TypedAst::Value { ty, .. } => Ok((Substitution::default(), ty.clone())),
         TypedAst::Fn {
             bindings,
             expr,
@@ -191,6 +191,29 @@ pub(crate) fn infer<'a>(
                     span: *span,
                 })
             }
+        }
+        TypedAst::If {
+            condition,
+            if_true,
+            if_false,
+            ..
+        } => {
+            let mut sub = Substitution::default();
+
+            let (condition_sub, _) = infer(env, fresh, condition)?;
+
+            sub = sub.union(condition_sub);
+
+            let (true_sub, if_true) = infer(env, fresh, if_true)?;
+            sub = sub.union(true_sub);
+            let (false_sub, if_false) = infer(env, fresh, if_false)?;
+            sub = sub.union(false_sub);
+
+            let unified = unify(if_true.clone(), if_false)?;
+
+            sub = sub.union(unified);
+
+            Ok((sub, if_true))
         }
     }
 }

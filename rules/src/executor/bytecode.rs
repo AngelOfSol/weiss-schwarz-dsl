@@ -2,43 +2,8 @@ use std::fmt::Display;
 
 use crate::executor::value::Value;
 
-pub type Bytecode = InternalBytecode<usize>;
+pub type ExecutableBytecode = InternalBytecode<usize>;
 pub type LabeledBytecode = InternalBytecode<String>;
-
-impl LabeledBytecode {
-    pub fn print() -> Self {
-        InternalBytecode::Print
-    }
-    pub fn ret() -> Self {
-        InternalBytecode::Return
-    }
-    pub fn call(target: String) -> Self {
-        InternalBytecode::Call(target)
-    }
-    pub fn load(target: Value) -> Self {
-        InternalBytecode::Load(target)
-    }
-    pub fn jump(target: String) -> Self {
-        InternalBytecode::Jump(target)
-    }
-    pub fn jump_if(target: String) -> Self {
-        InternalBytecode::JumpIf(target)
-    }
-
-    pub fn label(label: String) -> Self {
-        InternalBytecode::Label(label)
-    }
-
-    pub fn load_ref(binding: String) -> Self {
-        InternalBytecode::LoadRef(binding)
-    }
-    pub fn store(binding: String) -> Self {
-        InternalBytecode::Store(binding)
-    }
-    pub fn unload(binding: String) -> Self {
-        InternalBytecode::Unload(binding)
-    }
-}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum InternalBytecode<LabelType> {
