@@ -38,7 +38,9 @@ pub(crate) enum TypedAst<'a> {
         values: Vec<TypedAst<'a>>,
         span: Span<'a>,
     },
-    Leaf(Type<'a>),
+    Value {
+        ty: Type<'a>,
+    },
 }
 
 impl<'a> TypedAst<'a> {
@@ -50,7 +52,7 @@ impl<'a> TypedAst<'a> {
             | TypedAst::Binding { span, .. }
             | TypedAst::Array { span, .. }
             | TypedAst::Seq { span, .. } => span,
-            TypedAst::Leaf(inner) => inner.span(),
+            TypedAst::Value { ty } => ty.span(),
         }
     }
     #[allow(dead_code)]
@@ -74,7 +76,7 @@ impl<'a> TypedAst<'a> {
             }
 
             TypedAst::Binding { .. } => (),
-            TypedAst::Leaf(ty) => *ty = ty.apply(rules),
+            TypedAst::Value { ty } => *ty = ty.apply(rules),
             TypedAst::Fn { expr, .. } => {
                 expr.apply(rules);
             }
@@ -109,31 +111,41 @@ pub(crate) fn build_type_tree<'a>(sexpr: &Sexpr<'a>, fresh: &mut Fresh) -> Typed
             name: *binding,
             span: *span,
         },
-        Sexpr::Integer(_, span) => TypedAst::Leaf(Type::Constant {
-            span: *span,
-            name: TypeName::Integer,
-            parameters: vec![],
-        }),
-        Sexpr::Bool(_, span) => TypedAst::Leaf(Type::Constant {
-            span: *span,
-            name: TypeName::Bool,
-            parameters: vec![],
-        }),
-        Sexpr::Zone(_, span) => TypedAst::Leaf(Type::Constant {
-            span: *span,
-            name: TypeName::Zone,
-            parameters: vec![],
-        }),
-        Sexpr::Unit(span) => TypedAst::Leaf(Type::Constant {
-            span: *span,
-            name: TypeName::Unit,
-            parameters: vec![],
-        }),
-        Sexpr::None(span) => TypedAst::Leaf(Type::Constant {
-            span: *span,
-            name: TypeName::Option,
-            parameters: vec![Type::Var(fresh.next(), *span)],
-        }),
+        Sexpr::Integer(_, span) => TypedAst::Value {
+            ty: Type::Constant {
+                span: *span,
+                name: TypeName::Integer,
+                parameters: vec![],
+            },
+        },
+        Sexpr::Bool(_, span) => TypedAst::Value {
+            ty: Type::Constant {
+                span: *span,
+                name: TypeName::Bool,
+                parameters: vec![],
+            },
+        },
+        Sexpr::Zone(_, span) => TypedAst::Value {
+            ty: Type::Constant {
+                span: *span,
+                name: TypeName::Zone,
+                parameters: vec![],
+            },
+        },
+        Sexpr::Unit(span) => TypedAst::Value {
+            ty: Type::Constant {
+                span: *span,
+                name: TypeName::Unit,
+                parameters: vec![],
+            },
+        },
+        Sexpr::None(span) => TypedAst::Value {
+            ty: Type::Constant {
+                span: *span,
+                name: TypeName::Option,
+                parameters: vec![Type::Var(fresh.next(), *span)],
+            },
+        },
         Sexpr::Array { span, values } => TypedAst::Array {
             span: *span,
             values: values

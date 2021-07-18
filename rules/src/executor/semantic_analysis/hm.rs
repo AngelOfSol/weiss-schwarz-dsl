@@ -95,7 +95,7 @@ pub(crate) fn infer<'a>(
         TypedAst::Binding { name, span } => Ok((Substitution::default(), {
             env.map.get(*name).unwrap().new_vars(fresh).with_span(*span)
         })),
-        TypedAst::Leaf(ty) => Ok((Substitution::default(), ty.clone())),
+        TypedAst::Value { ty } => Ok((Substitution::default(), ty.clone())),
         TypedAst::Fn {
             bindings,
             expr,
