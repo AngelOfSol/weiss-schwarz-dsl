@@ -1,12 +1,9 @@
 use std::collections::BTreeSet;
 
-use crate::{
-    executor::{
+use crate::{executor::{
         semantic_analysis::hm::types::Type,
         value::{Value },
-    },
-    parsing::{ Span},
-};
+    }, parsing::{Span, }};
 use thiserror::Error;
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -29,6 +26,7 @@ pub enum CompileError<'a> {
         span: Span<'a>,
     }
 }
+
 
 impl<'a> From<SymbolError<'a>> for CompileError<'a> {
     fn from(inner: SymbolError<'a>) -> Self {

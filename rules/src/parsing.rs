@@ -7,13 +7,16 @@ use nom::{
     bytes::complete::tag,
     combinator::{consumed, map, map_opt, opt, recognize, value},
     multi::{many0, many1, separated_list0},
-    sequence::{delimited, pair, preceded, terminated, tuple},
+    sequence::{delimited, pair, preceded, tuple},
     IResult,
 };
 use nom_locate::LocatedSpan;
 
-use crate::executor::semantic_analysis::hm::{type_schemes::TypeScheme, types::Type, Fresh};
 use crate::{executor::semantic_analysis::hm::types::TypeVariable, model::ZoneId};
+use crate::{
+    executor::semantic_analysis::hm::{type_schemes::TypeScheme, types::Type, Fresh},
+    parsing::lexing::ws,
+};
 
 pub type SpanFileName<'a> = &'a str;
 
@@ -23,14 +26,10 @@ pub fn parse_sexpr(input: Span) -> IResult<Span, SexprValue> {
     map(
         consumed(delimited(
             lexing::open,
-            tuple((
-                lexing::identifier,
-                many0(preceded(lexing::whitespace, parse_sexpr_value)),
-                opt(lexing::whitespace),
-            )),
+            tuple((lexing::identifier, many0(parse_sexpr_value))),
             lexing::close,
         )),
-        |(span, (symbol, arguments, _))| SexprValue::Sexpr {
+        |(span, (symbol, arguments))| SexprValue::Sexpr {
             target: symbol,
             arguments,
             span: span,
@@ -41,11 +40,7 @@ pub fn parse_seq(input: Span) -> IResult<Span, SexprValue> {
     map(
         consumed(delimited(
             lexing::open,
-            delimited(
-                tag("seq"),
-                many0(preceded(lexing::whitespace, parse_sexpr_value)),
-                opt(lexing::whitespace),
-            ),
+            preceded(ws(tag("seq")), many0(parse_sexpr_value)),
             lexing::close,
         )),
         |(span, sub_expressions)| SexprValue::Seq {
@@ -59,17 +54,10 @@ pub fn parse_array(input: Span) -> IResult<Span, SexprValue> {
     map(
         consumed(delimited(
             lexing::open_array,
-            tuple((
-                parse_sexpr_value,
-                many0(preceded(lexing::whitespace, parse_sexpr_value)),
-                opt(lexing::whitespace),
-            )),
+            many1(parse_sexpr_value),
             lexing::close_array,
         )),
-        |(span, (first, mut rest, _))| {
-            rest.insert(0, first);
-            SexprValue::Array { values: rest, span }
-        },
+        |(span, rest)| SexprValue::Array { values: rest, span },
     )(input)
 }
 
@@ -77,26 +65,24 @@ pub fn parse_let(input: Span) -> IResult<Span, SexprValue> {
     map(
         consumed(delimited(
             lexing::open,
-            tuple((
-                tag("let"),
-                lexing::whitespace,
-                delimited(
-                    lexing::open,
-                    many1(delimited(
+            preceded(
+                ws(tag("let")),
+                tuple((
+                    delimited(
                         lexing::open,
-                        tuple((
-                            lexing::identifier,
-                            preceded(lexing::whitespace, parse_sexpr_value),
+                        many1(delimited(
+                            lexing::open,
+                            tuple((lexing::identifier, parse_sexpr_value)),
+                            lexing::close,
                         )),
                         lexing::close,
-                    )),
-                    lexing::close,
-                ),
-                preceded(lexing::whitespace, parse_sexpr_value),
-            )),
+                    ),
+                    parse_sexpr_value,
+                )),
+            ),
             lexing::close,
         )),
-        |(span, (_, _, bindings, expr))| SexprValue::Let {
+        |(span, (bindings, expr))| SexprValue::Let {
             bindings,
             expr: Box::new(expr),
             span,
@@ -110,44 +96,33 @@ pub fn parse_fn<'a>(input: Span<'a>) -> IResult<Span<'a>, SexprValue<'a>> {
     let (input, result) = map(
         consumed(delimited(
             lexing::open,
-            tuple((
-                tag("fn"),
-                lexing::whitespace,
-                delimited(
-                    lexing::open,
-                    many0(preceded(
-                        opt(lexing::whitespace),
-                        nom::sequence::pair(
+            preceded(
+                ws(tag("fn")),
+                tuple((
+                    delimited(
+                        lexing::open,
+                        many0(pair(
                             lexing::identifier,
                             map(
-                                consumed(opt(preceded(
-                                    tuple((
-                                        opt(lexing::whitespace),
-                                        lexing::ascribe,
-                                        opt(lexing::whitespace),
-                                    )),
-                                    |input| parse_type_with_mapping(input, &fresh, &mapping),
-                                ))),
+                                consumed(opt(preceded(lexing::ascribe, |input| {
+                                    parse_type_with_mapping(input, &fresh, &mapping)
+                                }))),
                                 |(span, inner)| {
                                     inner.unwrap_or(Type::type_var(fresh.borrow_mut().next(), span))
                                 },
                             ),
-                        ),
-                    )),
-                    lexing::close,
-                ),
-                consumed(opt(delimited(
-                    lexing::whitespace,
-                    preceded(pair(lexing::arrow, opt(lexing::whitespace)), |input| {
+                        )),
+                        lexing::close,
+                    ),
+                    consumed(opt(preceded(lexing::arrow, |input| {
                         parse_type_with_mapping(input, &fresh, &mapping)
-                    }),
-                    lexing::whitespace,
-                ))),
-                preceded(opt(lexing::whitespace), parse_sexpr_value),
-            )),
+                    }))),
+                    parse_sexpr_value,
+                )),
+            ),
             lexing::close,
         )),
-        |(span, (_, _, arguments, (ret_span, return_type), eval))| SexprValue::Fn {
+        |(span, (arguments, (ret_span, return_type), eval))| SexprValue::Fn {
             arguments: arguments,
             return_type: return_type.unwrap_or(Type::type_var(fresh.borrow_mut().next(), ret_span)),
             eval: Box::new(eval),
@@ -158,15 +133,15 @@ pub fn parse_fn<'a>(input: Span<'a>) -> IResult<Span<'a>, SexprValue<'a>> {
     Ok((input, result))
 }
 
-pub fn parse_type(input: Span) -> IResult<Span, Type> {
+pub fn parse_type<'a>(input: Span<'a>) -> IResult<Span<'a>, Type<'a>> {
     let fresh = RefCell::new(Fresh::default());
     let mapping = RefCell::new(HashMap::default());
 
     parse_type_with_mapping(input, &fresh, &mapping)
 }
 
-pub(crate) fn parse_type_scheme(input: Span) -> IResult<Span, TypeScheme> {
-    let (input, ty) = parse_type(input)?;
+pub(crate) fn parse_type_scheme<'a>(input: Span<'a>) -> IResult<Span<'a>, TypeScheme<'a>> {
+    let (input, ty) = ws(parse_type)(input)?;
 
     Ok((input, TypeScheme::generalize_all(ty)))
 }
@@ -176,16 +151,16 @@ pub fn parse_type_with_mapping<'a>(
     fresh: &RefCell<Fresh>,
     mapping: &RefCell<HashMap<&'a str, TypeVariable>>,
 ) -> IResult<Span<'a>, Type<'a>> {
-    alt((
-        map(recognize(tag("i32")), Type::integer),
-        map(recognize(tag("()")), Type::unit),
-        map(recognize(tag("zone")), Type::zone),
-        map(recognize(tag("card")), Type::card),
-        map(recognize(tag("bool")), Type::boolean),
+    ws(alt((
+        map(recognize(ws(tag("i32"))), Type::integer),
+        map(recognize(ws(tag("()"))), Type::unit),
+        map(recognize(ws(tag("zone"))), Type::zone),
+        map(recognize(ws(tag("card"))), Type::card),
+        map(recognize(ws(tag("bool"))), Type::boolean),
         |input| parse_fn_type(input, fresh, mapping),
         map(
             preceded(
-                tag("?"),
+                ws(tag("?")),
                 consumed(|i| parse_type_with_mapping(i, fresh, mapping)),
             ),
             |(span, ty)| Type::option(ty, span),
@@ -204,7 +179,7 @@ pub fn parse_type_with_mapping<'a>(
             let tv = mapping.entry(ident).or_insert_with(|| fresh.next()).clone();
             Type::type_var(tv, span)
         }),
-    ))(input)
+    )))(input)
 }
 pub fn parse_fn_type<'a>(
     input: Span<'a>,
@@ -214,20 +189,14 @@ pub fn parse_fn_type<'a>(
     let (input, (span, (mut args, ret))) = consumed(tuple((
         delimited(
             tuple((tag("fn"), lexing::open)),
-            separated_list0(
-                tuple((opt(lexing::whitespace), tag(","), opt(lexing::whitespace))),
-                |input| parse_type_with_mapping(input, fresh, mapping),
-            ),
+            separated_list0(ws(tag(",")), |input| {
+                parse_type_with_mapping(input, fresh, mapping)
+            }),
             lexing::close,
         ),
-        opt(preceded(
-            delimited(
-                opt(lexing::whitespace),
-                lexing::arrow,
-                opt(lexing::whitespace),
-            ),
-            |input| parse_type_with_mapping(input, fresh, mapping),
-        )),
+        opt(preceded(lexing::arrow, |input| {
+            parse_type_with_mapping(input, fresh, mapping)
+        })),
     )))(input)?;
     args.push(ret.unwrap_or(Type::unit(input)));
 
@@ -238,16 +207,13 @@ pub fn parse_if(input: Span) -> IResult<Span, SexprValue> {
     map(
         consumed(delimited(
             lexing::open,
-            tuple((
+            preceded(
                 tag("if"),
-                preceded(lexing::whitespace, parse_sexpr_value),
-                preceded(lexing::whitespace, parse_sexpr_value),
-                opt(preceded(lexing::whitespace, parse_sexpr_value)),
-                opt(lexing::whitespace),
-            )),
+                tuple((parse_sexpr_value, parse_sexpr_value, opt(parse_sexpr_value))),
+            ),
             lexing::close,
         )),
-        |(span, (_, condition, if_true, if_false, _))| SexprValue::If {
+        |(span, (condition, if_true, if_false))| SexprValue::If {
             condition: Box::new(condition),
             if_true: Box::new(if_true),
             if_false: Box::new(if_false.unwrap_or(SexprValue::Unit(span))),
@@ -257,7 +223,7 @@ pub fn parse_if(input: Span) -> IResult<Span, SexprValue> {
 }
 
 pub fn parse_sexpr_value(input: Span) -> IResult<Span, SexprValue> {
-    alt((
+    ws(alt((
         parse_if,
         parse_let,
         parse_fn,
@@ -271,7 +237,7 @@ pub fn parse_sexpr_value(input: Span) -> IResult<Span, SexprValue> {
         parse_symbol,
         parse_seq,
         parse_sexpr,
-    ))(input)
+    )))(input)
 }
 
 pub fn parse_symbol(input: Span) -> IResult<Span, SexprValue> {
@@ -476,16 +442,10 @@ pub fn parse_program(
 ) -> IResult<Span, (Vec<ExternDeclaration>, Vec<FunctionDefinition>, SexprValue)> {
     map(
         tuple((
-            terminated(
-                separated_list0(
-                    lexing::whitespace,
-                    alt((
-                        map(parse_extern, Preamble::Extern),
-                        map(parse_fn_definition, Preamble::Definition),
-                    )),
-                ),
-                opt(lexing::whitespace),
-            ),
+            many0(alt((
+                map(parse_extern, Preamble::Extern),
+                map(parse_fn_definition, Preamble::Definition),
+            ))),
             parse_sexpr_value,
         )),
         |(preambles, program)| {
@@ -511,11 +471,8 @@ pub fn parse_extern(input: Span) -> IResult<Span, ExternDeclaration> {
         consumed(delimited(
             lexing::open,
             preceded(
-                pair(tag("extern"), lexing::whitespace),
-                pair(
-                    lexing::identifier,
-                    preceded(lexing::whitespace, parse_type_scheme),
-                ),
+                ws(tag("extern")),
+                pair(lexing::identifier, parse_type_scheme),
             ),
             lexing::close,
         )),
@@ -539,10 +496,7 @@ pub fn parse_fn_definition(input: Span) -> IResult<Span, FunctionDefinition> {
     map(
         consumed(delimited(
             lexing::open,
-            preceded(
-                pair(tag("define"), lexing::whitespace),
-                pair(lexing::identifier, preceded(lexing::whitespace, parse_fn)),
-            ),
+            preceded(ws(tag("define")), pair(lexing::identifier, ws(parse_fn))),
             lexing::close,
         )),
         |(span, (name, eval))| {

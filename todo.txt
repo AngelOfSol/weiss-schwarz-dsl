@@ -133,3 +133,44 @@ x.y -> (get y x)
 
 change code gen so that anonymous functions get inlined?, but defines don't
 still need to figure out how to pass a fn to a rust function and have it run
+
+
+generate effect application order via inserting into a list
+
+if there is no particular order, push to back
+
+if it has no dependcies, push to front
+
+lets say we have 4 abilities
+
+1: [{}, {L}] 2: [{S}, {P}] 3: [{L}, {S}] 4: [{L}, {P}]
+
+inserting in 2, 3, 1, 4
+
+[2]
+=> inserting 3 ->
+has to be BEFORE 3
+[3, 2]
+=> inserting 1 ->
+[1, 3, 2]
+=> inserting 4 ->
+has to be AFTER 1
+[1, 3, 2, 4]
+
+another sample order
+
+[2]
+=> inserting 4 ->
+[2, 4]
+=> inserting 1 ->
+always FIRST
+[1, 3, 2]
+=> inserting 3 ->
+has to be AFTER 1 {idx > 0}
+// this is the last element in the array, that affects a property the effect depends on
+has to be BEFORE 2 {idx <= 1}
+// this is the first element in the array, that is affected by the effects result
+-- pick the greatest number in this range --
+[1, 3, 2, 4]
+
+if {idx > #} && {idx <= #} then choose the later bound
