@@ -5,7 +5,7 @@ use std::{cell::RefCell, collections::HashMap, fmt::Display};
 use nom::{
     branch::alt,
     bytes::complete::tag,
-    combinator::{consumed, map, map_opt, opt, recognize, value},
+    combinator::{all_consuming, consumed, cut, map, map_opt, opt, recognize, value},
     multi::{many0, many1, separated_list0},
     sequence::{delimited, pair, preceded, tuple},
     IResult as NomResult,
@@ -18,17 +18,22 @@ use crate::{
     parsing::lexing::ws,
 };
 
+pub use nom::{
+    error::{VerboseError, VerboseErrorKind},
+    Err,
+};
+
 pub type SpanFileName<'a> = &'a str;
 
 pub type Span<'a> = LocatedSpan<&'a str, SpanFileName<'a>>;
 
-pub type IResult<I, O, E = nom::error::VerboseError<I>> = NomResult<I, O, E>;
+pub type IResult<I, O, E = VerboseError<I>> = NomResult<I, O, E>;
 
 pub fn parse_sexpr(input: Span) -> IResult<Span, Sexpr> {
     map(
         consumed(delimited(
             lexing::open,
-            many1(parse_sexpr_value),
+            cut(many1(parse_sexpr_value)),
             lexing::close,
         )),
         |(span, arguments)| Sexpr::Eval {
@@ -41,7 +46,7 @@ pub fn parse_seq(input: Span) -> IResult<Span, Sexpr> {
     map(
         consumed(delimited(
             lexing::open,
-            preceded(ws(tag("seq")), many0(parse_sexpr_value)),
+            preceded(ws(tag("seq")), cut(many0(parse_sexpr_value))),
             lexing::close,
         )),
         |(span, sub_expressions)| Sexpr::Seq {
@@ -55,7 +60,7 @@ pub fn parse_array(input: Span) -> IResult<Span, Sexpr> {
     map(
         consumed(delimited(
             lexing::open_array,
-            many1(parse_sexpr_value),
+            cut(many1(parse_sexpr_value)),
             lexing::close_array,
         )),
         |(span, rest)| Sexpr::Array { values: rest, span },
@@ -68,7 +73,7 @@ pub fn parse_let(input: Span) -> IResult<Span, Sexpr> {
             lexing::open,
             preceded(
                 ws(tag("let")),
-                tuple((
+                cut(tuple((
                     delimited(
                         lexing::open,
                         many1(delimited(
@@ -79,7 +84,7 @@ pub fn parse_let(input: Span) -> IResult<Span, Sexpr> {
                         lexing::close,
                     ),
                     parse_sexpr_value,
-                )),
+                ))),
             ),
             lexing::close,
         )),
@@ -99,7 +104,7 @@ pub fn parse_fn<'a>(input: Span<'a>) -> IResult<Span<'a>, Sexpr<'a>> {
             lexing::open,
             preceded(
                 ws(tag("fn")),
-                tuple((
+                cut(tuple((
                     delimited(
                         lexing::open,
                         many0(pair(
@@ -115,15 +120,15 @@ pub fn parse_fn<'a>(input: Span<'a>) -> IResult<Span<'a>, Sexpr<'a>> {
                         )),
                         lexing::close,
                     ),
-                    consumed(opt(preceded(lexing::arrow, |input| {
+                    opt(preceded(lexing::arrow, |input| {
                         parse_type_with_mapping(input, &fresh, &mapping)
-                    }))),
+                    })),
                     parse_sexpr_value,
-                )),
+                ))),
             ),
             lexing::close,
         )),
-        |(span, (arguments, (ret_span, return_type), eval))| Sexpr::Fn {
+        |(span, (arguments, return_type, eval))| Sexpr::Fn {
             arguments: arguments,
             return_type: return_type,
             eval: Box::new(eval),
@@ -190,9 +195,9 @@ pub fn parse_fn_type<'a>(
     let (input, (span, (mut args, ret))) = consumed(tuple((
         delimited(
             tuple((tag("fn"), lexing::open)),
-            separated_list0(ws(tag(",")), |input| {
+            cut(separated_list0(ws(tag(",")), |input| {
                 parse_type_with_mapping(input, fresh, mapping)
-            }),
+            })),
             lexing::close,
         ),
         opt(preceded(lexing::arrow, |input| {
@@ -210,7 +215,11 @@ pub fn parse_if(input: Span) -> IResult<Span, Sexpr> {
             lexing::open,
             preceded(
                 tag("if"),
-                tuple((parse_sexpr_value, parse_sexpr_value, opt(parse_sexpr_value))),
+                cut(tuple((
+                    parse_sexpr_value,
+                    parse_sexpr_value,
+                    opt(parse_sexpr_value),
+                ))),
             ),
             lexing::close,
         )),
@@ -228,6 +237,7 @@ pub fn parse_sexpr_value(input: Span) -> IResult<Span, Sexpr> {
         parse_if,
         parse_let,
         parse_fn,
+        parse_seq,
         parse_none,
         parse_zone,
         parse_number_literal,
@@ -236,7 +246,6 @@ pub fn parse_sexpr_value(input: Span) -> IResult<Span, Sexpr> {
         parse_array,
         // parse_symbol must be second to last
         parse_symbol,
-        parse_seq,
         parse_sexpr,
     )))(input)
 }
@@ -272,10 +281,7 @@ pub fn parse_number_literal(input: Span) -> IResult<Span, Sexpr> {
 }
 
 pub fn parse_unit(input: Span) -> IResult<Span, Sexpr> {
-    map(
-        consumed(tuple((lexing::open, lexing::close))),
-        |(span, _)| Sexpr::Unit(span),
-    )(input)
+    map(recognize(tag("()")), Sexpr::Unit)(input)
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -450,6 +456,35 @@ impl<'a> Preamble<'a> {
     }
 }
 
+pub fn parse_included_file(
+    input: Span,
+) -> IResult<Span, (Vec<ExternDeclaration>, Vec<FunctionDefinition>)> {
+    map(
+        all_consuming(many0(alt((
+            map(parse_extern, Preamble::Extern),
+            map(parse_fn_definition, Preamble::Definition),
+        )))),
+        |preambles| {
+            let (externs, preambles) = preambles
+                .into_iter()
+                .partition::<Vec<_>, _>(|value| matches!(value, Preamble::Extern(..)));
+            let externs: Vec<_> = externs
+                .into_iter()
+                .map(|item| item.try_into_extern().ok().unwrap())
+                .collect();
+            let (definitions, _) = preambles
+                .into_iter()
+                .partition::<Vec<_>, _>(|value| matches!(value, Preamble::Definition(..)));
+            let definitions: Vec<_> = definitions
+                .into_iter()
+                .map(|item| item.try_into_definition().ok().unwrap())
+                .collect();
+
+            (externs, definitions)
+        },
+    )(input)
+}
+
 pub fn parse_program(
     input: Span,
 ) -> IResult<
@@ -462,14 +497,14 @@ pub fn parse_program(
     ),
 > {
     map(
-        tuple((
+        all_consuming(tuple((
             many0(alt((
                 map(parse_extern, Preamble::Extern),
                 map(parse_fn_definition, Preamble::Definition),
                 map(parse_include, Preamble::Include),
             ))),
-            consumed(many0(parse_sexpr_value)),
-        )),
+            consumed(many1(parse_sexpr_value)),
+        ))),
         |(preambles, (span, sub_expressions))| {
             let (externs, preambles) = preambles
                 .into_iter()

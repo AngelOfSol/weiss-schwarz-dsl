@@ -1,3 +1,5 @@
+#![feature(iter_intersperse)]
+
 mod ui;
 
 use std::time::Instant;

@@ -26,7 +26,7 @@ pub(crate) fn infer<'a>(
     tt: &TypedAst<'a>,
 ) -> Result<(Substitution<'a>, Type<'a>), TypeError<'a>> {
     match tt {
-        TypedAst::Call {
+        TypedAst::Eval {
             children, span, ty, ..
         } => {
             let fresh_type_variable = ty.clone();

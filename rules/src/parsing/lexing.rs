@@ -1,8 +1,8 @@
 use nom::{
     bytes::complete::{tag, take_until},
     character::complete::{multispace0, one_of},
-    combinator::{map, not, recognize, value},
-    error::ParseError,
+    combinator::{cut, map, not, recognize, value},
+    error::{context, ParseError},
     multi::{many0, many1},
     sequence::{delimited, pair},
     AsChar, IResult as NomResult, InputIter, InputLength, InputTake, InputTakeAtPosition,
@@ -11,6 +11,12 @@ use nom::{
 use crate::parsing::Span;
 
 pub type IResult<I, O, E = nom::error::VerboseError<I>> = NomResult<I, O, E>;
+
+macro_rules! contextual_tag {
+    ($value:expr) => {
+        context(concat!("expected ", stringify!($value)), tag($value))
+    };
+}
 
 fn from_span(span: Span) -> &str {
     *span.fragment()
@@ -46,39 +52,43 @@ pub fn number(input: Span) -> IResult<Span, i32> {
 
 pub fn raw_string(input: Span) -> IResult<Span, &str> {
     map(
-        ws(delimited(tag("\""), recognize(take_until("\"")), tag("\""))),
+        ws(delimited(
+            contextual_tag!("\""),
+            recognize(take_until("\"")),
+            contextual_tag!("\""),
+        )),
         from_span,
     )(input)
 }
 
 pub fn arrow(input: Span) -> IResult<Span, ()> {
-    value((), ws(tag("->")))(input)
+    value((), ws(contextual_tag!("->")))(input)
 }
 
 pub fn open(input: Span) -> IResult<Span, ()> {
-    value((), ws(tag("(")))(input)
+    value((), ws(contextual_tag!("(")))(input)
 }
 
 pub fn close_type_variables(input: Span) -> IResult<Span, ()> {
-    value((), ws(tag(">")))(input)
+    value((), ws(contextual_tag!(">")))(input)
 }
 
 pub fn open_type_variables(input: Span) -> IResult<Span, ()> {
-    value((), ws(tag("<")))(input)
+    value((), ws(contextual_tag!("<")))(input)
 }
 
 pub fn close(input: Span) -> IResult<Span, ()> {
-    value((), ws(tag(")")))(input)
+    cut(value((), ws(contextual_tag!(")"))))(input)
 }
 
 pub fn open_array(input: Span) -> IResult<Span, ()> {
-    value((), ws(tag("[")))(input)
+    value((), ws(contextual_tag!("[")))(input)
 }
 
 pub fn close_array(input: Span) -> IResult<Span, ()> {
-    value((), ws(tag("]")))(input)
+    value((), ws(contextual_tag!("]")))(input)
 }
 
 pub fn ascribe(input: Span) -> IResult<Span, ()> {
-    value((), ws(tag(":")))(input)
+    value((), ws(contextual_tag!(":")))(input)
 }

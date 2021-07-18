@@ -1,13 +1,13 @@
 use std::{collections::HashMap, convert::TryInto, fs::write};
 
-use egui::{Color32, ScrollArea, TextEdit, Ui, Vec2};
+use egui::{Color32, Label, ScrollArea, TextEdit, Ui, Vec2};
 use rules::{
     executor::{
         code_generation::generate, error::RuntimeError, semantic_analysis, Executor, ExecutorHeap,
         ExecutorStack,
     },
     model::{Card, CardId, Game, ZoneId},
-    parsing::{parse_program, Span},
+    parsing::{parse_included_file, parse_program, Span},
 };
 use semantic_analysis::semantic_analysis;
 use serde::{Deserialize, Serialize};
@@ -48,8 +48,41 @@ impl DebugUi {
                     if ui.button("Run").clicked() && !self.console_input.is_empty() {
                         let temp = self.console_input.clone();
                         let ci = Span::new_extra(&temp, "<editor>");
-                        let result = parse_program(ci).map_err(|err| err.to_string()).and_then(
-                            |(_, (mut externs, mut defintions, includes, value))| {
+                        let result = parse_program(ci)
+                            .map_err(|err| match err {
+                                rules::parsing::Err::Incomplete(_) => todo!(),
+                                rules::parsing::Err::Failure(inner)
+                                | rules::parsing::Err::Error(inner) => inner
+                                    .errors
+                                    .into_iter()
+                                    .filter_map(|(span, kind)| match kind {
+                                        rules::parsing::VerboseErrorKind::Context(ctx) => {
+                                            Some((span, ctx))
+                                        }
+                                        rules::parsing::VerboseErrorKind::Char(_)
+                                        | rules::parsing::VerboseErrorKind::Nom(_) => {
+                                            Some((span, "nom error"))
+                                        }
+                                    })
+                                    .map(|(span, kind)| {
+                                        format!(
+                                            "\terror: {err}:\n\
+                                            \t{file}:{line_number}:{column}\n\
+                                           \t{line}\n\
+                                           \t{caret:>column$} {err}\n",
+                                            line_number = span.location_line(),
+                                            file = span.extra,
+                                            line = std::str::from_utf8(span.get_line_beginning())
+                                                .unwrap(),
+                                            caret = '^',
+                                            column = span.get_utf8_column(),
+                                            err = kind,
+                                        )
+                                    })
+                                    .intersperse("\n".to_string())
+                                    .collect::<String>(),
+                            })
+                            .and_then(|(_, (mut externs, mut defintions, includes, value))| {
                                 let includes = includes
                                     .into_iter()
                                     .flat_map(|include| {
@@ -61,8 +94,8 @@ impl DebugUi {
                                     .collect::<Vec<_>>();
 
                                 for (path, include) in includes.iter() {
-                                    let (_, (included_externs, included_defintions, _, _)) =
-                                        parse_program(Span::new_extra(&include, path))
+                                    let (_, (included_externs, included_defintions)) =
+                                        parse_included_file(Span::new_extra(&include, path))
                                             .map_err(|err| err.to_string())?;
                                     externs.extend(included_externs);
                                     defintions.extend(included_defintions);
@@ -111,8 +144,7 @@ impl DebugUi {
                                     }
                                 }
                                 .map_err(|err| err.to_string())
-                            },
-                        );
+                            });
 
                         // scroll to bottom
                         ui.memory().id_data.insert(id, true);
@@ -147,7 +179,9 @@ impl DebugUi {
                                     ui.separator();
                                     let value = right.as_ref().unwrap_or_else(|v| v);
                                     if matches!(right, Err(_)) {
-                                        ui.colored_label(Color32::RED, value);
+                                        ui.add(
+                                            Label::new(value).text_color(Color32::RED).monospace(),
+                                        );
                                     } else {
                                         ui.label(value);
                                     }

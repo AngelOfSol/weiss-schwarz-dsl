@@ -14,7 +14,7 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub enum TypedAst<'a> {
-    Call {
+    Eval {
         children: Vec<TypedAst<'a>>,
         span: Span<'a>,
         ty: Type<'a>,
@@ -64,14 +64,14 @@ pub enum TypedAst<'a> {
 impl<'a> Display for TypedAst<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TypedAst::Call { children, ty, .. } => {
+            TypedAst::Eval { children, ty, .. } => {
                 write!(
                     f,
                     "({}): {}",
                     children
                         .iter()
                         .map(ToString::to_string)
-                        .intersperse(" ".to_string())
+                        .intersperse("".to_string())
                         .collect::<String>(),
                     ty
                 )
@@ -147,7 +147,7 @@ impl<'a> Display for TypedAst<'a> {
 impl<'a> TypedAst<'a> {
     pub(crate) fn span(&self) -> &Span<'a> {
         match self {
-            TypedAst::Call { span, .. }
+            TypedAst::Eval { span, .. }
             | TypedAst::Let { span, .. }
             | TypedAst::Fn { span, .. }
             | TypedAst::Binding { span, .. }
@@ -159,7 +159,7 @@ impl<'a> TypedAst<'a> {
     }
     pub(crate) fn ty(&self) -> &Type<'a> {
         match self {
-            TypedAst::Call { ty, .. }
+            TypedAst::Eval { ty, .. }
             | TypedAst::Let { ty, .. }
             | TypedAst::Fn { ty, .. }
             | TypedAst::Binding { ty, .. }
@@ -171,7 +171,7 @@ impl<'a> TypedAst<'a> {
     }
     pub(crate) fn ty_mut(&mut self) -> &mut Type<'a> {
         match self {
-            TypedAst::Call { ty, .. }
+            TypedAst::Eval { ty, .. }
             | TypedAst::Let { ty, .. }
             | TypedAst::Fn { ty, .. }
             | TypedAst::Binding { ty, .. }
@@ -186,7 +186,7 @@ impl<'a> TypedAst<'a> {
         *self.ty_mut() = self.ty_mut().apply(rules);
 
         match self {
-            TypedAst::Call { children, .. } => {
+            TypedAst::Eval { children, .. } => {
                 for child in children {
                     child.apply(rules);
                 }
@@ -240,7 +240,7 @@ impl<'a> TypedAst<'a> {
 
 pub(crate) fn build_type_tree<'a>(sexpr: Sexpr<'a>, fresh: &mut Fresh) -> TypedAst<'a> {
     match sexpr {
-        Sexpr::Eval { span, arguments } => TypedAst::Call {
+        Sexpr::Eval { span, arguments } => TypedAst::Eval {
             children: arguments
                 .into_iter()
                 .map(|arg| build_type_tree(arg, fresh))
