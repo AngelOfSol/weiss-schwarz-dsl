@@ -17,16 +17,16 @@ pub mod types;
 pub mod unify;
 
 pub(crate) use fresh::Fresh;
-pub(crate) use type_tree::TypeTree;
+pub(crate) use type_tree::TypedAst;
 use unify::unify;
 
 pub(crate) fn infer<'a>(
     env: &TypeEnvironment<'a>,
     fresh: &mut Fresh,
-    tt: &TypeTree<'a>,
+    tt: &TypedAst<'a>,
 ) -> Result<(Substitution<'a>, Type<'a>), TypeError<'a>> {
     match tt {
-        TypeTree::Call { children, span, .. } => {
+        TypedAst::Call { children, span, .. } => {
             let fresh_type_variable = Type::Var(fresh.next(), *span);
 
             let (mut sub, fn_type) = infer(env, fresh, &children[0])?;
@@ -48,7 +48,7 @@ pub(crate) fn infer<'a>(
 
             Ok((sub.union(unified), ty))
         }
-        TypeTree::Let { bindings, expr, .. } => {
+        TypedAst::Let { bindings, expr, .. } => {
             let mut sub = Substitution::default();
             let mut env = env.clone();
 
@@ -92,11 +92,11 @@ pub(crate) fn infer<'a>(
 
             Ok((sub.union(expr), ty))
         }
-        TypeTree::Binding { name, span } => Ok((Substitution::default(), {
+        TypedAst::Binding { name, span } => Ok((Substitution::default(), {
             env.map.get(*name).unwrap().new_vars(fresh).with_span(*span)
         })),
-        TypeTree::Leaf(ty) => Ok((Substitution::default(), ty.clone())),
-        TypeTree::Fn {
+        TypedAst::Leaf(ty) => Ok((Substitution::default(), ty.clone())),
+        TypedAst::Fn {
             bindings,
             expr,
             span,
@@ -156,7 +156,7 @@ pub(crate) fn infer<'a>(
 
             Ok((sub.union(new_sub), result_ty))
         }
-        TypeTree::Seq {
+        TypedAst::Seq {
             sub_expressions, ..
         } => {
             let mut sub = Substitution::default();
@@ -171,7 +171,7 @@ pub(crate) fn infer<'a>(
 
             Ok((sub, resulting_types.pop().unwrap()))
         }
-        TypeTree::Array { values, span } => {
+        TypedAst::Array { values, span } => {
             let mut sub = Substitution::default();
             let mut resulting_types = values
                 .iter()

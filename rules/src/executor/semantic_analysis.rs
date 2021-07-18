@@ -9,13 +9,13 @@ use crate::{
         semantic_analysis::{
             hm::{
                 infer, type_environment::TypeEnvironment, type_tree::build_type_tree, Fresh,
-                TypeTree,
+                TypedAst,
             },
             symbol_validity::check_symbol_validity,
         },
         RUST_FN,
     },
-    parsing::{parse_type_scheme, ExternDeclaration, FunctionDefinition, SexprValue, Span},
+    parsing::{parse_type_scheme, ExternDeclaration, FunctionDefinition, Sexpr, Span},
 };
 
 pub type SymbolTable<'a> = HashSet<&'a str>;
@@ -26,12 +26,12 @@ trait VerifySexpr {
         I: Iterator<Item = &'a str> + 'b;
 }
 
-impl<'sexpr> VerifySexpr for SexprValue<'sexpr> {
+impl<'sexpr> VerifySexpr for Sexpr<'sexpr> {
     fn valid_target<'a, 'b, I>(&'a self, mut targets: I) -> Result<(), SymbolError<'a>>
     where
         I: Iterator<Item = &'a str> + 'b,
     {
-        if let SexprValue::Sexpr { target, span, .. } = self {
+        if let Sexpr::Eval { target, span, .. } = self {
             if targets.any(|item| item == *target) {
                 Ok(())
             } else {
@@ -47,7 +47,7 @@ impl<'sexpr> VerifySexpr for SexprValue<'sexpr> {
 }
 
 pub fn semantic_analysis<'a>(
-    ast: &'a SexprValue,
+    ast: &'a Sexpr,
     externs: &Vec<ExternDeclaration<'a>>,
     definitions: &'a Vec<FunctionDefinition<'a>>,
 ) -> Result<(), CompileError<'a>> {
@@ -87,7 +87,7 @@ pub fn semantic_analysis<'a>(
 
     let data = build_type_tree(ast, &mut fresh);
 
-    let upper = TypeTree::Let {
+    let upper = TypedAst::Let {
         bindings: definitions
             .iter()
             .map(|def| (def.name, build_type_tree(&def.eval, &mut fresh)))

@@ -4,25 +4,25 @@ use crate::{
         types::{Type, TypeName},
         Fresh,
     },
-    parsing::{SexprValue, Span},
+    parsing::{Sexpr, Span},
 };
 
 #[derive(Debug, Clone)]
-pub(crate) enum TypeTree<'a> {
+pub(crate) enum TypedAst<'a> {
     Call {
-        children: Vec<TypeTree<'a>>,
+        children: Vec<TypedAst<'a>>,
         span: Span<'a>,
     },
 
     Let {
-        bindings: Vec<(&'a str, TypeTree<'a>)>,
-        expr: Box<TypeTree<'a>>,
+        bindings: Vec<(&'a str, TypedAst<'a>)>,
+        expr: Box<TypedAst<'a>>,
         span: Span<'a>,
     },
     Fn {
         bindings: Vec<(&'a str, Type<'a>)>,
         return_type: Type<'a>,
-        expr: Box<TypeTree<'a>>,
+        expr: Box<TypedAst<'a>>,
         span: Span<'a>,
     },
     Binding {
@@ -30,55 +30,55 @@ pub(crate) enum TypeTree<'a> {
         span: Span<'a>,
     },
     Seq {
-        sub_expressions: Vec<TypeTree<'a>>,
+        sub_expressions: Vec<TypedAst<'a>>,
         span: Span<'a>,
     },
 
     Array {
-        values: Vec<TypeTree<'a>>,
+        values: Vec<TypedAst<'a>>,
         span: Span<'a>,
     },
     Leaf(Type<'a>),
 }
 
-impl<'a> TypeTree<'a> {
+impl<'a> TypedAst<'a> {
     pub(crate) fn span(&self) -> &Span<'a> {
         match self {
-            TypeTree::Call { span, .. }
-            | TypeTree::Let { span, .. }
-            | TypeTree::Fn { span, .. }
-            | TypeTree::Binding { span, .. }
-            | TypeTree::Array { span, .. }
-            | TypeTree::Seq { span, .. } => span,
-            TypeTree::Leaf(inner) => inner.span(),
+            TypedAst::Call { span, .. }
+            | TypedAst::Let { span, .. }
+            | TypedAst::Fn { span, .. }
+            | TypedAst::Binding { span, .. }
+            | TypedAst::Array { span, .. }
+            | TypedAst::Seq { span, .. } => span,
+            TypedAst::Leaf(inner) => inner.span(),
         }
     }
     #[allow(dead_code)]
     fn apply(&mut self, rules: &Substitution<'a>) {
         match self {
-            TypeTree::Call { children, .. } => {
+            TypedAst::Call { children, .. } => {
                 for child in children {
                     child.apply(rules);
                 }
             }
-            TypeTree::Array { values, .. } => {
+            TypedAst::Array { values, .. } => {
                 for value in values {
                     value.apply(rules);
                 }
             }
-            TypeTree::Let { bindings, expr, .. } => {
+            TypedAst::Let { bindings, expr, .. } => {
                 for (_, ty) in bindings {
                     ty.apply(rules);
                 }
                 expr.apply(rules);
             }
 
-            TypeTree::Binding { .. } => (),
-            TypeTree::Leaf(ty) => *ty = ty.apply(rules),
-            TypeTree::Fn { expr, .. } => {
+            TypedAst::Binding { .. } => (),
+            TypedAst::Leaf(ty) => *ty = ty.apply(rules),
+            TypedAst::Fn { expr, .. } => {
                 expr.apply(rules);
             }
-            TypeTree::Seq {
+            TypedAst::Seq {
                 sub_expressions, ..
             } => {
                 for expr in sub_expressions {
@@ -89,14 +89,14 @@ impl<'a> TypeTree<'a> {
     }
 }
 
-pub(crate) fn build_type_tree<'a>(sexpr: &SexprValue<'a>, fresh: &mut Fresh) -> TypeTree<'a> {
+pub(crate) fn build_type_tree<'a>(sexpr: &Sexpr<'a>, fresh: &mut Fresh) -> TypedAst<'a> {
     match sexpr {
-        SexprValue::Sexpr {
+        Sexpr::Eval {
             target,
             span,
             arguments,
-        } => TypeTree::Call {
-            children: vec![TypeTree::Binding {
+        } => TypedAst::Call {
+            children: vec![TypedAst::Binding {
                 name: target,
                 span: *span,
             }]
@@ -105,63 +105,63 @@ pub(crate) fn build_type_tree<'a>(sexpr: &SexprValue<'a>, fresh: &mut Fresh) -> 
             .collect(),
             span: *span,
         },
-        SexprValue::Symbol(binding, span) => TypeTree::Binding {
+        Sexpr::Symbol(binding, span) => TypedAst::Binding {
             name: *binding,
             span: *span,
         },
-        SexprValue::Integer(_, span) => TypeTree::Leaf(Type::Constant {
+        Sexpr::Integer(_, span) => TypedAst::Leaf(Type::Constant {
             span: *span,
             name: TypeName::Integer,
             parameters: vec![],
         }),
-        SexprValue::Bool(_, span) => TypeTree::Leaf(Type::Constant {
+        Sexpr::Bool(_, span) => TypedAst::Leaf(Type::Constant {
             span: *span,
             name: TypeName::Bool,
             parameters: vec![],
         }),
-        SexprValue::Zone(_, span) => TypeTree::Leaf(Type::Constant {
+        Sexpr::Zone(_, span) => TypedAst::Leaf(Type::Constant {
             span: *span,
             name: TypeName::Zone,
             parameters: vec![],
         }),
-        SexprValue::Unit(span) => TypeTree::Leaf(Type::Constant {
+        Sexpr::Unit(span) => TypedAst::Leaf(Type::Constant {
             span: *span,
             name: TypeName::Unit,
             parameters: vec![],
         }),
-        SexprValue::None(span) => TypeTree::Leaf(Type::Constant {
+        Sexpr::None(span) => TypedAst::Leaf(Type::Constant {
             span: *span,
             name: TypeName::Option,
             parameters: vec![Type::Var(fresh.next(), *span)],
         }),
-        SexprValue::Array { span, values } => TypeTree::Array {
+        Sexpr::Array { span, values } => TypedAst::Array {
             span: *span,
             values: values
                 .iter()
                 .map(|value| build_type_tree(value, fresh))
                 .collect(),
         },
-        SexprValue::Fn {
+        Sexpr::Fn {
             arguments,
             eval,
             span,
             return_type,
             ..
-        } => TypeTree::Fn {
+        } => TypedAst::Fn {
             bindings: arguments.clone(),
             return_type: return_type.clone(),
             expr: Box::new(build_type_tree(eval, fresh)),
             span: *span,
         },
-        SexprValue::If {
+        Sexpr::If {
             condition,
             if_true,
             if_false,
             span,
             ..
-        } => TypeTree::Call {
+        } => TypedAst::Call {
             children: vec![
-                TypeTree::Binding {
+                TypedAst::Binding {
                     name: "if",
                     span: *span,
                 },
@@ -171,12 +171,12 @@ pub(crate) fn build_type_tree<'a>(sexpr: &SexprValue<'a>, fresh: &mut Fresh) -> 
             ],
             span: *span,
         },
-        SexprValue::Let {
+        Sexpr::Let {
             bindings,
             expr,
             span,
             ..
-        } => TypeTree::Let {
+        } => TypedAst::Let {
             bindings: bindings
                 .iter()
                 .map(|(key, value)| (*key, build_type_tree(value, fresh)))
@@ -184,10 +184,10 @@ pub(crate) fn build_type_tree<'a>(sexpr: &SexprValue<'a>, fresh: &mut Fresh) -> 
             expr: Box::new(build_type_tree(expr, fresh)),
             span: *span,
         },
-        SexprValue::Seq {
+        Sexpr::Seq {
             sub_expressions,
             span,
-        } => TypeTree::Seq {
+        } => TypedAst::Seq {
             sub_expressions: sub_expressions
                 .iter()
                 .map(|expr| build_type_tree(expr, fresh))

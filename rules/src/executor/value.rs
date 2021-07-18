@@ -3,7 +3,7 @@ use std::{convert::TryFrom, fmt::Display};
 use crate::{
     executor::{error::RuntimeError, FnTypeInfo},
     model::{CardId, ZoneId},
-    parsing::SexprValue,
+    parsing::Sexpr,
 };
 use serde::{Deserialize, Serialize};
 
@@ -93,23 +93,23 @@ impl Display for Value {
     }
 }
 
-impl<'a> TryFrom<SexprValue<'a>> for Value {
-    type Error = SexprValue<'a>;
+impl<'a> TryFrom<Sexpr<'a>> for Value {
+    type Error = Sexpr<'a>;
 
-    fn try_from(value: SexprValue<'a>) -> Result<Self, Self::Error> {
+    fn try_from(value: Sexpr<'a>) -> Result<Self, Self::Error> {
         match value {
-            SexprValue::Integer(integer, ..) => Ok(Value::Integer(integer)),
-            SexprValue::Zone(zone, ..) => Ok(Value::Zone(zone)),
-            SexprValue::Unit(..) => Ok(Value::Unit(())),
-            SexprValue::Bool(value, ..) => Ok(Value::Bool(value)),
-            SexprValue::None(..) => Ok(Value::None),
-            x @ SexprValue::Array { .. }
-            | x @ SexprValue::Symbol(_, ..)
-            | x @ SexprValue::Let { .. }
-            | x @ SexprValue::If { .. }
-            | x @ SexprValue::Sexpr { .. }
-            | x @ SexprValue::Fn { .. }
-            | x @ SexprValue::Seq { .. } => Err(x),
+            Sexpr::Integer(integer, ..) => Ok(Value::Integer(integer)),
+            Sexpr::Zone(zone, ..) => Ok(Value::Zone(zone)),
+            Sexpr::Unit(..) => Ok(Value::Unit(())),
+            Sexpr::Bool(value, ..) => Ok(Value::Bool(value)),
+            Sexpr::None(..) => Ok(Value::None),
+            x @ Sexpr::Array { .. }
+            | x @ Sexpr::Symbol(_, ..)
+            | x @ Sexpr::Let { .. }
+            | x @ Sexpr::If { .. }
+            | x @ Sexpr::Eval { .. }
+            | x @ Sexpr::Fn { .. }
+            | x @ Sexpr::Seq { .. } => Err(x),
         }
     }
 }

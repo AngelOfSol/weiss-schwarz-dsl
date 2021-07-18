@@ -3,15 +3,15 @@ use crate::{
         error::SymbolError,
         semantic_analysis::{SymbolTable, VerifySexpr},
     },
-    parsing::SexprValue,
+    parsing::Sexpr,
 };
 
 pub fn check_symbol_validity<'a>(
-    ast: &'a SexprValue,
+    ast: &'a Sexpr,
     mut symbols: SymbolTable<'a>,
 ) -> Result<(), SymbolError<'a>> {
     match ast {
-        s @ SexprValue::Sexpr {
+        s @ Sexpr::Eval {
             target, arguments, ..
         } => match *target {
             "print" => check_symbol_validity(&arguments[0], symbols),
@@ -23,13 +23,13 @@ pub fn check_symbol_validity<'a>(
                 s.valid_target(symbols.iter().copied())
             }
         },
-        SexprValue::Array { values, .. } => {
+        Sexpr::Array { values, .. } => {
             for argument in values.iter() {
                 check_symbol_validity(argument, symbols.clone())?;
             }
             Ok(())
         }
-        SexprValue::Symbol(symbol, span) => {
+        Sexpr::Symbol(symbol, span) => {
             if symbols.contains(symbol) {
                 Ok(())
             } else {
@@ -39,7 +39,7 @@ pub fn check_symbol_validity<'a>(
                 })
             }
         }
-        SexprValue::If {
+        Sexpr::If {
             condition,
             if_true,
             if_false,
@@ -47,7 +47,7 @@ pub fn check_symbol_validity<'a>(
         } => check_symbol_validity(condition, symbols.clone())
             .or_else(|_| check_symbol_validity(if_true, symbols.clone()))
             .or_else(|_| check_symbol_validity(if_false, symbols)),
-        SexprValue::Fn {
+        Sexpr::Fn {
             arguments, eval, ..
         } => {
             for (binding, _) in arguments {
@@ -55,7 +55,7 @@ pub fn check_symbol_validity<'a>(
             }
             check_symbol_validity(eval, symbols)
         }
-        SexprValue::Let { bindings, expr, .. } => {
+        Sexpr::Let { bindings, expr, .. } => {
             for (_, binding_expr) in bindings.iter() {
                 check_symbol_validity(binding_expr, symbols.clone())?;
             }
@@ -63,7 +63,7 @@ pub fn check_symbol_validity<'a>(
 
             check_symbol_validity(expr, symbols)
         }
-        SexprValue::Seq {
+        Sexpr::Seq {
             sub_expressions, ..
         } => {
             for expr in sub_expressions {
@@ -71,10 +71,10 @@ pub fn check_symbol_validity<'a>(
             }
             Ok(())
         }
-        SexprValue::Integer(..)
-        | SexprValue::Zone(..)
-        | SexprValue::Unit(..)
-        | SexprValue::Bool(..)
-        | SexprValue::None(..) => Ok(()),
+        Sexpr::Integer(..)
+        | Sexpr::Zone(..)
+        | Sexpr::Unit(..)
+        | Sexpr::Bool(..)
+        | Sexpr::None(..) => Ok(()),
     }
 }

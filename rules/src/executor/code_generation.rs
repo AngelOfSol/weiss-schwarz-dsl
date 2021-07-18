@@ -5,7 +5,7 @@ use crate::{
         bytecode::{Bytecode, LabeledBytecode},
         value::Value,
     },
-    parsing::{FunctionDefinition, SexprValue},
+    parsing::{FunctionDefinition, Sexpr},
 };
 
 use super::bytecode::InternalBytecode;
@@ -71,9 +71,9 @@ impl SymbolTable {
     }
 }
 
-fn generate_internal(ast: SexprValue<'_>, symbols: &mut SymbolTable) -> Vec<LabeledBytecode> {
+fn generate_internal(ast: Sexpr<'_>, symbols: &mut SymbolTable) -> Vec<LabeledBytecode> {
     match ast {
-        SexprValue::Sexpr {
+        Sexpr::Eval {
             target,
             mut arguments,
             ..
@@ -98,12 +98,12 @@ fn generate_internal(ast: SexprValue<'_>, symbols: &mut SymbolTable) -> Vec<Labe
                     .collect::<Vec<_>>()
             }
         },
-        SexprValue::Symbol(binding, ..) => {
+        Sexpr::Symbol(binding, ..) => {
             vec![LabeledBytecode::load_ref(
                 symbols.get_binding(binding).unwrap().to_string(),
             )]
         }
-        SexprValue::Array { values, .. } => {
+        Sexpr::Array { values, .. } => {
             let len = values.len();
             values
                 .into_iter()
@@ -112,12 +112,12 @@ fn generate_internal(ast: SexprValue<'_>, symbols: &mut SymbolTable) -> Vec<Labe
                 .chain(once(LabeledBytecode::load(Value::ArrayLength(len))))
                 .collect::<Vec<_>>()
         }
-        rest @ SexprValue::None(..)
-        | rest @ SexprValue::Zone(..)
-        | rest @ SexprValue::Bool(..)
-        | rest @ SexprValue::Unit(..)
-        | rest @ SexprValue::Integer(..) => vec![LabeledBytecode::load(rest.try_into().unwrap())],
-        SexprValue::Fn {
+        rest @ Sexpr::None(..)
+        | rest @ Sexpr::Zone(..)
+        | rest @ Sexpr::Bool(..)
+        | rest @ Sexpr::Unit(..)
+        | rest @ Sexpr::Integer(..) => vec![LabeledBytecode::load(rest.try_into().unwrap())],
+        Sexpr::Fn {
             eval, arguments, ..
         } => {
             let anon_label = symbols.new_binding("#anon-fn#").to_string();
@@ -141,7 +141,7 @@ fn generate_internal(ast: SexprValue<'_>, symbols: &mut SymbolTable) -> Vec<Labe
 
             vec![LabeledBytecode::LoadLabel(anon_label)]
         }
-        SexprValue::Let { bindings, expr, .. } => {
+        Sexpr::Let { bindings, expr, .. } => {
             let mut result = vec![];
             let mut to_unload = vec![];
             symbols.new_scope();
@@ -164,7 +164,7 @@ fn generate_internal(ast: SexprValue<'_>, symbols: &mut SymbolTable) -> Vec<Labe
             symbols.end_scope();
             result
         }
-        SexprValue::If {
+        Sexpr::If {
             condition,
             if_true,
             if_false,
@@ -184,7 +184,7 @@ fn generate_internal(ast: SexprValue<'_>, symbols: &mut SymbolTable) -> Vec<Labe
                 .flatten()
                 .collect()
         }
-        SexprValue::Seq {
+        Sexpr::Seq {
             sub_expressions, ..
         } => sub_expressions
             .into_iter()
@@ -193,7 +193,7 @@ fn generate_internal(ast: SexprValue<'_>, symbols: &mut SymbolTable) -> Vec<Labe
     }
 }
 pub fn generate(
-    ast: SexprValue<'_>,
+    ast: Sexpr<'_>,
     function_defintions: Vec<FunctionDefinition<'_>>,
 ) -> (Vec<Bytecode>, Vec<LabeledBytecode>, HashMap<String, usize>) {
     let mut symbols = SymbolTable::default();
