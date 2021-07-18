@@ -55,21 +55,22 @@ impl DebugUi {
                                 | rules::parsing::Err::Error(inner) => inner
                                     .errors
                                     .into_iter()
-                                    .filter_map(|(span, kind)| match kind {
+                                    .map(|(span, kind)| match kind {
                                         rules::parsing::VerboseErrorKind::Context(ctx) => {
-                                            Some((span, ctx))
+                                            (span, ctx)
                                         }
                                         rules::parsing::VerboseErrorKind::Char(_)
                                         | rules::parsing::VerboseErrorKind::Nom(_) => {
-                                            Some((span, "nom error"))
+                                            (span, "nom error")
                                         }
                                     })
                                     .map(|(span, kind)| {
                                         format!(
-                                            "\terror: {err}:\n\
-                                            \t{file}:{line_number}:{column}\n\
-                                           \t{line}\n\
-                                           \t{caret:>column$} {err}\n",
+                                            "parsing error: {err}\n --> \
+                                                {file}:{line_number}:{column}\n  \
+                                                |\n  \
+                                                | {line}\n  \
+                                                | {caret:>column$} {err}\n",
                                             line_number = span.location_line(),
                                             file = span.extra,
                                             line = std::str::from_utf8(span.get_line_beginning())
@@ -175,17 +176,21 @@ impl DebugUi {
                         ScrollArea::from_max_height(200.0)
                             .id_source(ui.make_persistent_id("runtime output"))
                             .show(ui, |ui| {
-                                for right in self.console_lines.iter() {
-                                    ui.separator();
-                                    let value = right.as_ref().unwrap_or_else(|v| v);
-                                    if matches!(right, Err(_)) {
-                                        ui.add(
-                                            Label::new(value).text_color(Color32::RED).monospace(),
-                                        );
-                                    } else {
-                                        ui.label(value);
+                                ui.indent("runtime output indent", |ui| {
+                                    for right in self.console_lines.iter() {
+                                        ui.separator();
+                                        let value = right.as_ref().unwrap_or_else(|v| v);
+                                        if matches!(right, Err(_)) {
+                                            ui.add(
+                                                Label::new(value)
+                                                    .text_color(Color32::RED)
+                                                    .monospace(),
+                                            );
+                                        } else {
+                                            ui.label(value);
+                                        }
                                     }
-                                }
+                                });
                                 if scroll {
                                     ui.scroll_to_cursor(egui::Align::Min);
                                     ui.memory().id_data.insert(id, false);

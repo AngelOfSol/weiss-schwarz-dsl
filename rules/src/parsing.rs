@@ -61,7 +61,7 @@ pub fn parse_array(input: Span) -> IResult<Span, Sexpr> {
         consumed(delimited(
             lexing::open_array,
             cut(many1(parse_sexpr_value)),
-            lexing::close_array,
+            cut(lexing::close_array),
         )),
         |(span, rest)| Sexpr::Array { values: rest, span },
     )(input)

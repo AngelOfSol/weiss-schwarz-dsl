@@ -1,17 +1,48 @@
 use std::collections::BTreeSet;
 
-use crate::{executor::{
-        semantic_analysis::hm::types::Type,
-        value::{Value },
-    }, parsing::{Span, }};
+use crate::{
+    executor::{semantic_analysis::hm::types::Type, value::Value},
+    parsing::Span,
+};
 use thiserror::Error;
+
+fn make_file_indicator(span: Span) -> String {
+    format!(
+        " --> {filename}:{line}:{column}",
+        filename = span.extra,
+        line = span.location_line(),
+        column = span.get_utf8_column()
+    )
+}
+
+fn make_line(span: Span) -> String {
+    format!(
+        "{}",
+        std::str::from_utf8(span.get_line_beginning()).unwrap()
+    )
+}
+fn make_caret(span: Span) -> String {
+    format!(
+        "{blank:>column$}{blank:^>len$}",
+        blank = "",
+        column = span.get_utf8_column() - 1,
+        len = span.fragment().trim().len()
+    )
+}
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum SymbolError<'a> {
-    #[error("invalid symbol:\n{}:{}:{}\n\t{name}", .span.extra, .span.location_line(), .span.get_utf8_column())]
+    #[error("{error_message}\n\
+        {file_indicator}\n  \
+        |\n  \
+        | {fragment}\n  \
+        | {carets} {error_message}",
+        file_indicator = make_file_indicator(*.span),
+        fragment = make_line(*.span),
+        carets = make_caret(*.span),
+        error_message = "invalid symbol"
+    )]
     InvalidSymbol { name: &'a str, span: Span<'a> },
-    #[error("invalid fn:\n{}:{}:{}\n\t{name}", .span.extra, .span.location_line(), .span.get_utf8_column())]
-    InvalidFn { name: &'a str, span: Span<'a> },
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -20,13 +51,18 @@ pub enum CompileError<'a> {
     Symbol(SymbolError<'a>),
     #[error("type error: {0}")]
     Type(TypeError<'a>),
-    #[error("extern error: invalid extern\n{}:{}:{}\n\t{span}", .span.extra, .span.location_line(), .span.get_utf8_column())]
-    InvalidExtern {
-        name: &'a str,
-        span: Span<'a>,
-    }
+    #[error("{error_message}:\n\
+        {file_indicator}\n  \
+        |\n  \
+        | {fragment}\n  \
+        | {carets} {error_message}",
+        file_indicator = make_file_indicator(*.span),
+        fragment = make_line(*.span),
+        carets = make_caret(*.span),
+        error_message = "invalid extern"
+    )]
+    InvalidExtern { name: &'a str, span: Span<'a> },
 }
-
 
 impl<'a> From<SymbolError<'a>> for CompileError<'a> {
     fn from(inner: SymbolError<'a>) -> Self {
@@ -42,34 +78,71 @@ impl<'a> From<TypeError<'a>> for CompileError<'a> {
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum TypeError<'a> {
-    #[error("invalid type\n{}:{}:{}\n\texpected: {expected}\n\tfound: {found} ", .span.extra, .span.location_line(), .span.get_utf8_column())]
+    #[error("{error_name}\n\
+        {file_indicator}\n  \
+        |\n  \
+        | {fragment}\n  \
+        | {carets} expected: {expected}, found: {found}",
+        file_indicator = make_file_indicator(*.span),
+        fragment = make_line(*.span),
+        carets = make_caret(*.span),
+        error_name = "mismatched types"
+    )]
     InvalidType {
         expected: Type<'a>,
         found: Type<'a>,
         span: Span<'a>,
     },
-    #[error("multiple array types\n{}:{}:{}\n\tfound: {}", .span.extra, .span.location_line(), .span.get_utf8_column(), render_array(.found))]
+
+    #[error("{error_name}\n\
+        {file_indicator}\n  \
+        |\n  \
+        | {fragment}\n  \
+        | {carets} found multiple types: {rendered}",
+        file_indicator = make_file_indicator(*.span),
+        fragment = make_line(*.span),
+        carets = make_caret(*.span),
+        rendered = render_array(.found),
+        error_name = "invalid array"
+    )]
     InvalidArray {
         found: BTreeSet<Type<'a>>,
         span: Span<'a>,
     },
-    #[error("infinite type\n{}:{}:{}\n\t'{left}' <- '{right}'", .span.extra, .span.location_line(), .span.get_utf8_column())]
+    #[error("{error_name}\n\
+        {file_indicator}\n  \
+        |\n  \
+        | {fragment}\n  \
+        | {carets} `{left}` <- `{right}`",
+        file_indicator = make_file_indicator(*.span),
+        fragment = make_line(*.span),
+        carets = make_caret(*.span),
+        error_name = "infinite type"
+    )]
     InfiniteType {
         left: Type<'a>,
         right: Type<'a>,
         span: Span<'a>,
     },
-    #[error("ambiguous type\n{}:{}:{}\n\t{ty}\n\t{}",
-        .ty.span().extra, 
-        .ty.span().location_line(), 
-        .ty.span().get_utf8_column(), 
-        .ty.span().fragment()
+    #[error("{error_message}\n\
+        {file_indicator}\n  \
+        |\n  \
+        | {fragment}\n  \
+        | {carets} {error_message}",
+        file_indicator = make_file_indicator(*.ty.span()),
+        fragment = make_line(*.ty.span()),
+        carets = make_caret(*.ty.span()),
+        error_message = "ambiguous type"
     )]
     UninferredType { ty: Type<'a> },
 }
 
 fn render_array<'a>(found: &BTreeSet<Type<'a>>) -> String {
-    found.into_iter().map(|ty| format!("{}", ty)).intersperse(format!(", ")).collect()
+    found
+        .into_iter()
+        .map(|ty| format!("{}", ty))
+        .intersperse(format!(", "))
+        .collect()
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
