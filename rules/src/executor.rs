@@ -1,5 +1,4 @@
 pub mod bytecode;
-pub mod code_generation;
 pub mod error;
 pub mod new_code_gen;
 pub mod rust_funcs;
@@ -83,12 +82,6 @@ impl Executor {
             }
             ExecutableBytecode::Load(value) => {
                 self.stack.push_any(value.clone());
-
-                true
-            }
-            ExecutableBytecode::LoadLabel(value) => {
-                self.stack.push(Label(*value));
-
                 true
             }
             ExecutableBytecode::Jump(new_ip) => {
@@ -130,9 +123,9 @@ impl Executor {
             }
 
             ExecutableBytecode::CallDynamic => {
-                let Label(label) = self.stack.pop()?;
+                let Label { ip, .. } = self.stack.pop()?;
                 self.ip_stack.push(self.ip);
-                self.ip = label;
+                self.ip = ip;
                 false
             }
         };

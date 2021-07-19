@@ -8,7 +8,7 @@ pub fn check_symbol_validity<'a>(
     mut symbols: SymbolTable<'a>,
 ) -> Result<(), SymbolError<'a>> {
     match ast {
-        s @ Sexpr::Eval { arguments, .. } => {
+        Sexpr::Eval { arguments, .. } => {
             for argument in arguments.iter() {
                 check_symbol_validity(argument, symbols.clone())?;
             }

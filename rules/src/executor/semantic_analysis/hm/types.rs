@@ -1,9 +1,6 @@
 use crate::{executor::semantic_analysis::hm::substitution::Substitution, parsing::Span};
 use derivative::Derivative;
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    fmt::Display,
-};
+use std::{collections::BTreeSet, fmt::Display};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TypeVariable(usize);

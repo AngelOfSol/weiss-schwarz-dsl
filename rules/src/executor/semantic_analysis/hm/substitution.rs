@@ -8,11 +8,9 @@ pub struct Substitution<'a> {
 }
 
 impl<'a> Substitution<'a> {
-    pub(crate) fn union(self, rhs: Self) -> Self {
-        for (tv, lhs) in rhs.map.iter() {
-            if let Some((og_tv, rhs)) = self.map.iter().find(|(og_tv, _)| og_tv == tv) {
-                log::warn!("{}: {} replacing {}: {}", tv, lhs, og_tv, rhs);
-            }
+    pub(crate) fn union(self, mut rhs: Self) -> Self {
+        for (_, ty) in rhs.map.iter_mut() {
+            *ty = ty.apply(&self);
         }
 
         Self {

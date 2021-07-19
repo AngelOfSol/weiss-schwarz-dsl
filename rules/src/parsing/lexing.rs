@@ -1,7 +1,7 @@
 use nom::{
     bytes::complete::{tag, take_until},
     character::complete::{multispace0, one_of},
-    combinator::{cut, map, not, recognize, value},
+    combinator::{cut, map, recognize, value},
     error::{context, ParseError},
     multi::{many0, many1},
     sequence::{delimited, pair},

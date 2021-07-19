@@ -1,10 +1,10 @@
-use std::{collections::HashMap, convert::TryInto, fs::write};
+use std::{collections::HashMap, fs::write};
 
 use egui::{Color32, Label, ScrollArea, TextEdit, Ui, Vec2};
 use rules::{
     executor::{
-        code_generation::generate,
         error::{make_error_message, RuntimeError},
+        new_code_gen::generate,
         semantic_analysis, Executor, ExecutorHeap, ExecutorStack,
     },
     model::{Card, CardId, Game, ZoneId},
@@ -103,9 +103,9 @@ impl DebugUi {
                                     ip_stack: vec![],
                                     labels: HashMap::new(),
                                 };
-                                semantic_analysis(&value, &externs, &defintions)
+                                let value = semantic_analysis(&value, &externs, &defintions)
                                     .map_err(|err| err.to_string())?;
-                                let (for_exec, for_display, labels) = generate(value, defintions);
+                                let (for_exec, for_display, labels) = generate(value, &externs);
                                 executor.labels = labels;
                                 executor.bytecode = for_exec;
 

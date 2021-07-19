@@ -5,7 +5,7 @@ use std::collections::HashSet;
 
 use crate::{
     executor::{
-        error::{CompileError, SymbolError},
+        error::CompileError,
         semantic_analysis::{
             hm::{
                 infer, type_environment::TypeEnvironment, type_tree::build_type_tree, types::Type,

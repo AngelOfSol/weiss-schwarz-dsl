@@ -1,32 +1,26 @@
-use std::{collections::HashMap, convert::TryInto, iter::once};
+use std::{collections::HashMap, iter::once};
 
 use crate::{
     executor::{
         bytecode::{ExecutableBytecode, LabeledBytecode},
         semantic_analysis::hm::TypedAst,
-        value::Value,
+        value::{Label, Value},
     },
-    parsing::FunctionDefinition,
+    parsing::ExternDeclaration,
 };
 
-use super::bytecode::InternalBytecode;
-
-#[derive(Debug)]
-struct SymbolTable {
+#[derive(Debug, Default)]
+struct SymbolTable<'a> {
     next_id: usize,
     next_anon_fn: usize,
+    next_fn_salt: usize,
+
+    fn_labels: Vec<HashMap<&'a str, String>>,
+
+    fn_extra_code: Vec<LabeledBytecode>,
 }
 
-impl Default for SymbolTable {
-    fn default() -> Self {
-        Self {
-            next_id: 0,
-            next_anon_fn: 0,
-        }
-    }
-}
-
-impl SymbolTable {
+impl<'a> SymbolTable<'a> {
     pub fn next_if_labels(&mut self) -> (String, String) {
         let idx = self.next_id;
         self.next_id += 1;
@@ -40,12 +34,38 @@ impl SymbolTable {
         format!("#anon-fn#-{}", idx)
     }
 
-    pub fn get_label_for(&self, name: &str) -> Option<&str> {
-        todo!()
+    pub fn get_label_for(&self, name: &str) -> Option<&String> {
+        self.fn_labels.iter().rev().find_map(|map| map.get(name))
+    }
+
+    pub fn new_scope(&mut self, names: &[&'a str]) -> Vec<(&'a str, String)> {
+        self.fn_labels.push(HashMap::new());
+
+        names
+            .iter()
+            .map(|name| {
+                let label = if self.get_label_for(*name).is_some() {
+                    let salted = format!("{}#{}", name, self.next_fn_salt);
+                    self.next_fn_salt += 1;
+                    salted
+                } else {
+                    name.to_string()
+                };
+                let top = self.fn_labels.last_mut().unwrap();
+
+                top.insert(name, label.clone());
+
+                (*name, label)
+            })
+            .collect()
+    }
+
+    pub fn pop_scope(&mut self) {
+        self.fn_labels.pop();
     }
 }
 
-fn generate_internal(ast: TypedAst<'_>, symbols: &mut SymbolTable) -> Vec<LabeledBytecode> {
+fn generate_internal<'a>(ast: TypedAst<'a>, symbols: &mut SymbolTable<'a>) -> Vec<LabeledBytecode> {
     match ast {
         TypedAst::Eval { mut children, .. } => {
             let callee = children.remove(0);
@@ -60,21 +80,26 @@ fn generate_internal(ast: TypedAst<'_>, symbols: &mut SymbolTable) -> Vec<Labele
             match &callee {
                 TypedAst::Fn { .. } => {
                     let label = symbols.next_anon_fn();
-                    let mut _callee_code = generate_internal(callee, symbols);
-                    _callee_code.insert(0, LabeledBytecode::Label(label.clone()));
+                    let mut callee_code = generate_internal(callee, symbols);
+                    callee_code.insert(0, LabeledBytecode::Label(label.clone()));
 
-                    vec![LabeledBytecode::Call(label)]
+                    symbols.fn_extra_code.extend(callee_code);
+
+                    arguments.push(LabeledBytecode::Call(label));
+
+                    arguments
                 }
                 // emits Call with the properlabel if available otherwise emits a std binding load + CallDynamic
                 TypedAst::Binding { name, .. } => {
-                    if let Some(label) = symbols.get_label_for(*name) {
+                    arguments.extend(if let Some(label) = symbols.get_label_for(*name) {
                         vec![LabeledBytecode::Call(label.to_string())]
                     } else {
                         vec![
                             LabeledBytecode::LoadRef(name.to_string()),
                             LabeledBytecode::CallDynamic,
                         ]
-                    }
+                    });
+                    arguments
                 }
                 TypedAst::Value { .. } => {
                     panic!("can't generate code with a value in the function position")
@@ -87,7 +112,6 @@ fn generate_internal(ast: TypedAst<'_>, symbols: &mut SymbolTable) -> Vec<Labele
                     arguments
                 }
             }
-            //
         }
         TypedAst::Array { values, .. } => {
             let len = values.len();
@@ -99,7 +123,7 @@ fn generate_internal(ast: TypedAst<'_>, symbols: &mut SymbolTable) -> Vec<Labele
                 .collect::<Vec<_>>()
         }
 
-        TypedAst::Value { ty: _, value } => {
+        TypedAst::Value { value, .. } => {
             vec![LabeledBytecode::Load(value)]
         }
         TypedAst::Binding { name, .. } => vec![LabeledBytecode::LoadRef(name.to_string())],
@@ -118,202 +142,160 @@ fn generate_internal(ast: TypedAst<'_>, symbols: &mut SymbolTable) -> Vec<Labele
         } => {
             let (true_label, end_label) = symbols.next_if_labels();
             let mut condition = generate_internal(*condition, symbols);
-            condition.push(InternalBytecode::JumpIf(true_label.clone()));
+            condition.push(LabeledBytecode::JumpIf(true_label.clone()));
             let mut if_false = generate_internal(*if_false, symbols);
-            if_false.push(InternalBytecode::Jump(end_label.clone()));
-            if_false.push(InternalBytecode::Label(true_label));
+            if_false.push(LabeledBytecode::Jump(end_label.clone()));
+            if_false.push(LabeledBytecode::Label(true_label));
             let mut if_true = generate_internal(*if_true, symbols);
             // need to add "symbol table" etc so it can generate fresh labels
-            if_true.push(InternalBytecode::Label(end_label));
+            if_true.push(LabeledBytecode::Label(end_label));
             vec![condition, if_false, if_true]
                 .into_iter()
                 .flatten()
                 .collect()
         }
-        TypedAst::Eval { children, span, ty } => todo!(),
-        TypedAst::Let {
-            bindings,
-            expr,
-            span,
-            ty,
-        } => todo!(),
-        TypedAst::Fn {
-            bindings,
-            return_type,
-            expr,
-            span,
-            ty,
-        } => todo!(),
-        // Sexpr::Eval {
-        //     target,
-        //     mut arguments,
-        //     ..
-        // } => match target {
-        //     "print" => {
-        //         let mut res = generate_internal(arguments.remove(0), symbols);
-        //         res.push(LabeledBytecode::print());
-        //         res
-        //     }
-        //     _ => {
-        //         let label = symbols
-        //             .get_binding(target)
-        //             .map(|label| vec![LabeledBytecode::call(label.to_string())])
-        //             .unwrap_or_else(|| vec![LabeledBytecode::call(target.to_string())]);
+        TypedAst::Fn { bindings, expr, .. } => {
+            let mut to_unload = vec![];
+            let mut preamble = vec![];
 
-        //         arguments
-        //             .into_iter()
-        //             .rev()
-        //             .map(|arg| generate_internal(arg, symbols))
-        //             .flatten()
-        //             .chain(label)
-        //             .collect::<Vec<_>>()
-        //     }
-        // },
-        // Sexpr::Symbol(binding, ..) => {
-        //     vec![LabeledBytecode::load_ref(
-        //         symbols.get_binding(binding).unwrap().to_string(),
-        //     )]
-        // }
-        // Sexpr::Fn {
-        //     eval, arguments, ..
-        // } => {
-        //     let anon_label = symbols.new_binding("#anon-fn#").to_string();
+            for (binding, _) in bindings {
+                let binding = binding.to_string();
+                preamble.push(LabeledBytecode::Store(binding.clone()));
+                to_unload.push(LabeledBytecode::Unload(binding));
+            }
 
-        //     let mut to_unload = vec![];
-        //     let mut preamble = vec![LabeledBytecode::Label(anon_label.clone())];
+            preamble.extend(generate_internal(*expr, symbols));
 
-        //     for (binding, _) in arguments {
-        //         let binding = symbols.new_binding(binding).to_string();
-        //         preamble.push(LabeledBytecode::store(binding.clone()));
-        //         to_unload.push(LabeledBytecode::unload(binding));
-        //     }
+            preamble.extend(to_unload);
 
-        //     preamble.extend(generate_internal(*eval, symbols));
+            preamble.extend(vec![LabeledBytecode::Return]);
 
-        //     preamble.extend(to_unload);
+            preamble
+        }
+        TypedAst::Let { bindings, expr, .. } => {
+            //
+            let new_scoped_labels = bindings
+                .iter()
+                .filter_map(|(name, ast)| {
+                    if matches!(ast, TypedAst::Fn { .. }) {
+                        Some(*name)
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>();
 
-        //     preamble.extend(vec![LabeledBytecode::ret()]);
+            let scoped = symbols.new_scope(&new_scoped_labels);
 
-        //     symbols.add_fn(preamble);
+            let mut unload = vec![];
 
-        //     vec![LabeledBytecode::LoadLabel(anon_label)]
-        // }
-        // Sexpr::Let { bindings, expr, .. } => {
-        //     let mut result = vec![];
-        //     let mut to_unload = vec![];
-        //     symbols.new_scope();
-        //     for (binding, value) in bindings {
-        //         let data = generate_internal(value, symbols);
-        //         if let Some(LabeledBytecode::LoadLabel(new_label)) = data.last() {
-        //             // this means we just bound a function
-        //             // let mut data = data;
-        //             // data.insert(0, LabeledBytecode::label(binding.clone()));
-        //             symbols.rebind(binding, new_label.clone());
-        //         } else {
-        //             let binding = symbols.new_binding(binding).to_string();
-        //             result.extend(data);
-        //             result.push(LabeledBytecode::store(binding.clone()));
-        //             to_unload.push(LabeledBytecode::unload(binding));
-        //         }
-        //     }
-        //     result.extend(generate_internal(*expr, symbols));
-        //     result.extend(to_unload);
-        //     symbols.end_scope();
-        //     result
-        // }
+            let mut preamble = bindings
+                .into_iter()
+                .map(|(name, ast)| {
+                    if matches!(ast, TypedAst::Fn { .. }) {
+                        let (_, label) = scoped
+                            .iter()
+                            .find(|(original_binding, _)| original_binding == &name)
+                            .unwrap();
+
+                        let mut callee_code = generate_internal(ast, symbols);
+                        callee_code.insert(0, LabeledBytecode::Label(label.clone()));
+
+                        symbols.fn_extra_code.extend(callee_code);
+
+                        // this load/store allows fns to be used first-class
+                        let data = vec![
+                            LabeledBytecode::LoadLabel(label.clone()),
+                            LabeledBytecode::Store(name.to_string()),
+                        ];
+
+                        unload.push(LabeledBytecode::Unload(name.to_string()));
+
+                        data
+                    } else {
+                        let mut data = generate_internal(ast, symbols);
+                        data.push(LabeledBytecode::Store(name.to_string()));
+
+                        unload.push(LabeledBytecode::Unload(name.to_string()));
+
+                        data
+                    }
+                })
+                .flatten()
+                .collect::<Vec<_>>();
+
+            preamble.extend(generate_internal(*expr, symbols));
+            preamble.extend(unload);
+
+            symbols.pop_scope();
+
+            preamble
+        }
     }
 }
 pub fn generate(
     ast: TypedAst<'_>,
+    externs: &[ExternDeclaration],
 ) -> (
     Vec<ExecutableBytecode>,
     Vec<LabeledBytecode>,
     HashMap<String, usize>,
 ) {
-    // let mut symbols = SymbolTable::default();
-    // let internal = generate_internal(ast, &mut symbols);
-    // let internal = internal
-    //     .into_iter()
-    //     .chain(once(InternalBytecode::Return))
-    //     .chain(
-    //         function_defintions
-    //             .into_iter()
-    //             .map(|def| {
-    //                 // when deffing a function, remove the anon function preamble
-    //                 // also define own symbol table cause fuck you
-    //                 let mut symbols = SymbolTable::default();
-    //                 generate_internal(def.eval, &mut symbols);
+    let mut symbols = SymbolTable::default();
 
-    //                 symbols.fns.remove(0);
+    symbols.new_scope(&externs.iter().map(|decl| decl.name).collect::<Vec<_>>());
 
-    //                 symbols
-    //                     .fns
-    //                     .insert(0, InternalBytecode::label(def.name.to_string()));
+    let internal = generate_internal(ast, &mut symbols);
 
-    //                 symbols.fns
-    //             })
-    //             .flatten(),
-    //     )
-    //     .collect::<Vec<_>>()
-    //     .into_iter()
-    //     .chain(symbols.fns)
-    //     .collect::<Vec<_>>();
+    let internal = internal
+        .into_iter()
+        .chain(once(LabeledBytecode::Return))
+        .collect::<Vec<_>>()
+        .into_iter()
+        .chain(symbols.fn_extra_code)
+        .collect::<Vec<_>>();
 
-    // let label_values = internal
-    //     .iter()
-    //     .enumerate()
-    //     .filter_map(|(idx, item)| {
-    //         if let InternalBytecode::Label(value) = item {
-    //             Some((value.to_string(), idx))
-    //         } else {
-    //             None
-    //         }
-    //     })
-    //     .collect::<HashMap<_, _>>();
+    let label_values = internal
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, item)| {
+            if let LabeledBytecode::Label(value) = item {
+                Some((value.to_string(), idx))
+            } else {
+                None
+            }
+        })
+        .collect::<HashMap<_, _>>();
 
-    // let mut next_binding = 0;
-    // let mut bindings = HashMap::new();
-
-    // (
-    //     internal
-    //         .iter()
-    //         .map(|x| match x {
-    //             InternalBytecode::Print => Bytecode::Print,
-    //             InternalBytecode::Call(value) => Bytecode::Call(value.clone()),
-    //             InternalBytecode::Load(value) => Bytecode::Load(value.clone()),
-    //             InternalBytecode::LoadLabel(label) => {
-    //                 Bytecode::LoadLabel(label_values[label.as_str()])
-    //             }
-    //             InternalBytecode::Label(value) => Bytecode::Label(value.clone()),
-    //             InternalBytecode::Jump(label) => Bytecode::Jump(label_values[label.as_str()]),
-    //             InternalBytecode::JumpIf(label) => Bytecode::JumpIf(label_values[label.as_str()]),
-    //             InternalBytecode::Return => Bytecode::Return,
-    //             InternalBytecode::Store(binding) => {
-    //                 Bytecode::Store(*bindings.entry(binding).or_insert_with(|| {
-    //                     let ret = next_binding;
-    //                     next_binding += 1;
-    //                     ret
-    //                 }))
-    //             }
-    //             InternalBytecode::LoadRef(binding) => {
-    //                 Bytecode::LoadRef(*bindings.entry(binding).or_insert_with(|| {
-    //                     let ret = next_binding;
-    //                     next_binding += 1;
-    //                     ret
-    //                 }))
-    //             }
-    //             InternalBytecode::Unload(binding) => {
-    //                 Bytecode::Unload(*bindings.entry(binding).or_insert_with(|| {
-    //                     let ret = next_binding;
-    //                     next_binding += 1;
-    //                     ret
-    //                 }))
-    //             }
-    //             InternalBytecode::CallDynamic => Bytecode::CallDynamic,
-    //         })
-    //         .collect(),
-    //     internal,
-    //     label_values,
-    // )
-    todo!()
+    (
+        internal
+            .iter()
+            .map(|x| match x {
+                LabeledBytecode::Print => ExecutableBytecode::Print,
+                LabeledBytecode::Call(value) if value == "print" => ExecutableBytecode::Print,
+                LabeledBytecode::Call(value) => ExecutableBytecode::Call(value.clone()),
+                LabeledBytecode::Load(value) => ExecutableBytecode::Load(value.clone()),
+                LabeledBytecode::LoadLabel(label) => {
+                    ExecutableBytecode::Load(Value::Label(Label {
+                        name: label.clone(),
+                        ip: label_values[label.as_str()],
+                    }))
+                }
+                LabeledBytecode::Label(value) => ExecutableBytecode::Label(value.clone()),
+                LabeledBytecode::Jump(label) => {
+                    ExecutableBytecode::Jump(label_values[label.as_str()])
+                }
+                LabeledBytecode::JumpIf(label) => {
+                    ExecutableBytecode::JumpIf(label_values[label.as_str()])
+                }
+                LabeledBytecode::Return => ExecutableBytecode::Return,
+                LabeledBytecode::Store(binding) => ExecutableBytecode::Store(binding.clone()),
+                LabeledBytecode::LoadRef(binding) => ExecutableBytecode::LoadRef(binding.clone()),
+                LabeledBytecode::Unload(binding) => ExecutableBytecode::Unload(binding.clone()),
+                LabeledBytecode::CallDynamic => ExecutableBytecode::CallDynamic,
+            })
+            .collect(),
+        internal,
+        label_values,
+    )
 }

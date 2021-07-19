@@ -7,8 +7,11 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Copy)]
-pub struct Label(pub usize);
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct Label {
+    pub name: String,
+    pub ip: usize,
+}
 
 pub trait ValueFrom: Sized {
     fn try_from(value: Value) -> Result<Self, RuntimeError>;
@@ -91,7 +94,7 @@ impl Display for Value {
             Value::Bool(value) => write!(f, "{}: bool", value),
             Value::None => write!(f, "none: ?"),
             Value::Some(inner) => write!(f, "some {}?", inner),
-            Value::Label(inner) => write!(f, "label@{}", inner.0),
+            Value::Label(inner) => write!(f, "label@{}", inner.name),
         }
     }
 }

@@ -157,6 +157,8 @@ impl<'a> TypedAst<'a> {
             TypedAst::Value { ty, .. } => ty.span(),
         }
     }
+
+    #[allow(dead_code)]
     pub(crate) fn ty(&self) -> &Type<'a> {
         match self {
             TypedAst::Eval { ty, .. }

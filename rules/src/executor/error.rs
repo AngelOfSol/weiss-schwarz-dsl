@@ -158,6 +158,8 @@ pub enum RuntimeError {
     InvalidBytecodeOffset,
     #[error("code isn't finished running")]
     Unfinished(String),
+    #[error("bytecode should not try to load label directly: '{0}")]
+    LoadLabel(usize),
     #[error("missing heap value name: {0}")]
     MissingHeapValue(String),
     #[error("invalid fn name \"{0}\"")]
