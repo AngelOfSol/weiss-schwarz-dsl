@@ -14,9 +14,9 @@ pub enum InternalBytecode<LabelType> {
     LoadLabel(LabelType),
     Jump(LabelType),
     JumpIf(LabelType),
-    Store(LabelType),
-    LoadRef(LabelType),
-    Unload(LabelType),
+    Store(String),
+    LoadRef(String),
+    Unload(String),
     /// NO-OP, specifically added for debugging purposes
     Label(String),
     Return,

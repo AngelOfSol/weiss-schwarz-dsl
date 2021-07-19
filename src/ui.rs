@@ -3,8 +3,9 @@ use std::{collections::HashMap, convert::TryInto, fs::write};
 use egui::{Color32, Label, ScrollArea, TextEdit, Ui, Vec2};
 use rules::{
     executor::{
-        code_generation::generate, error::RuntimeError, semantic_analysis, Executor, ExecutorHeap,
-        ExecutorStack,
+        code_generation::generate,
+        error::{make_error_message, RuntimeError},
+        semantic_analysis, Executor, ExecutorHeap, ExecutorStack,
     },
     model::{Card, CardId, Game, ZoneId},
     parsing::{parse_included_file, parse_program, Span},
@@ -65,19 +66,11 @@ impl DebugUi {
                                         }
                                     })
                                     .map(|(span, kind)| {
-                                        format!(
-                                            "parsing error: {err}\n --> \
-                                                {file}:{line_number}:{column}\n  \
-                                                |\n  \
-                                                | {line}\n  \
-                                                | {caret:>column$} {err}\n",
-                                            line_number = span.location_line(),
-                                            file = span.extra,
-                                            line = std::str::from_utf8(span.get_line_beginning())
-                                                .unwrap(),
-                                            caret = '^',
-                                            column = span.get_utf8_column(),
-                                            err = kind,
+                                        make_error_message(
+                                            &format!("parsing error: {}", kind),
+                                            kind,
+                                            span,
+                                            std::str::from_utf8(span.get_line_beginning()).unwrap(),
                                         )
                                     })
                                     .intersperse("\n".to_string())

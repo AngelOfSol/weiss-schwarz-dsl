@@ -6,7 +6,7 @@ pub mod rust_funcs;
 pub mod semantic_analysis;
 pub mod value;
 
-use crate::executor::{bytecode::ExecutableBytecode, error::RuntimeError};
+use crate::executor::{bytecode::ExecutableBytecode, error::RuntimeError, value::Label};
 use crate::{
     executor::value::{Value, ValueFrom, ValueType},
     model::Game,
@@ -33,7 +33,7 @@ pub struct ExecutorStack {
 
 #[derive(Default, Debug)]
 pub struct ExecutorHeap {
-    heap: HashMap<usize, Vec<Value>>,
+    heap: HashMap<String, Vec<Value>>,
 }
 
 impl Executor {
@@ -87,7 +87,7 @@ impl Executor {
                 true
             }
             ExecutableBytecode::LoadLabel(value) => {
-                self.stack.push((value.clone(), ()));
+                self.stack.push(Label(*value));
 
                 true
             }
@@ -114,7 +114,7 @@ impl Executor {
             ExecutableBytecode::Label(_) => true,
             ExecutableBytecode::Store(idx) => {
                 let value = self.stack.pop_any()?;
-                self.heap.store(*idx, value);
+                self.heap.store(idx.clone(), value);
 
                 true
             }
@@ -130,7 +130,7 @@ impl Executor {
             }
 
             ExecutableBytecode::CallDynamic => {
-                let (label, _) = self.stack.pop()?;
+                let Label(label) = self.stack.pop()?;
                 self.ip_stack.push(self.ip);
                 self.ip = label;
                 false
@@ -146,23 +146,23 @@ impl Executor {
 }
 
 impl ExecutorHeap {
-    pub fn store(&mut self, key: usize, value: Value) {
+    pub fn store(&mut self, key: String, value: Value) {
         let data = self.heap.entry(key).or_default();
         data.push(value);
     }
 
-    pub fn load(&mut self, key: &usize) -> Result<Value, RuntimeError> {
+    pub fn load(&mut self, key: &str) -> Result<Value, RuntimeError> {
         if let Some(value) = self.heap.get(key).and_then(|internal| internal.last()) {
             Ok(value.clone())
         } else {
-            Err(RuntimeError::MissingHeapValue(*key))
+            Err(RuntimeError::MissingHeapValue(key.to_string()))
         }
     }
-    pub fn unload(&mut self, key: &usize) -> Result<(), RuntimeError> {
+    pub fn unload(&mut self, key: &str) -> Result<(), RuntimeError> {
         if let Some(_) = self.heap.get_mut(key).and_then(|inner| inner.pop()) {
             Ok(())
         } else {
-            Err(RuntimeError::MissingHeapValue(*key))
+            Err(RuntimeError::MissingHeapValue(key.to_string()))
         }
     }
 }

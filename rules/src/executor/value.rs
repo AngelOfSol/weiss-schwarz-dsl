@@ -7,6 +7,9 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Copy)]
+pub struct Label(pub usize);
+
 pub trait ValueFrom: Sized {
     fn try_from(value: Value) -> Result<Self, RuntimeError>;
 }
@@ -20,7 +23,7 @@ pub enum Value {
     CardId(CardId),
     Bool(bool),
     Some(Box<Value>),
-    Label((usize, ())),
+    Label(Label),
     None,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
@@ -88,7 +91,7 @@ impl Display for Value {
             Value::Bool(value) => write!(f, "{}: bool", value),
             Value::None => write!(f, "none: ?"),
             Value::Some(inner) => write!(f, "some {}?", inner),
-            Value::Label((inner, _)) => write!(f, "label@{}", inner),
+            Value::Label(inner) => write!(f, "label@{}", inner.0),
         }
     }
 }
@@ -140,6 +143,6 @@ macro_rules! impl_variant {
 impl_variant!(Bool, bool);
 impl_variant!(Integer, i32);
 impl_variant!(ArrayLength, usize);
-impl_variant!(Label, (usize, ()));
+impl_variant!(Label, Label);
 impl_variant!(Zone, ZoneId);
 impl_variant!(CardId, CardId);

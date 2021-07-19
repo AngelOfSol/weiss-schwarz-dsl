@@ -245,7 +245,6 @@ pub fn generate(
         .collect::<HashMap<_, _>>();
 
     let mut next_binding = 0;
-    let mut bindings = HashMap::new();
 
     (
         internal
@@ -265,27 +264,9 @@ pub fn generate(
                     ExecutableBytecode::JumpIf(label_values[label.as_str()])
                 }
                 InternalBytecode::Return => ExecutableBytecode::Return,
-                InternalBytecode::Store(binding) => {
-                    ExecutableBytecode::Store(*bindings.entry(binding).or_insert_with(|| {
-                        let ret = next_binding;
-                        next_binding += 1;
-                        ret
-                    }))
-                }
-                InternalBytecode::LoadRef(binding) => {
-                    ExecutableBytecode::LoadRef(*bindings.entry(binding).or_insert_with(|| {
-                        let ret = next_binding;
-                        next_binding += 1;
-                        ret
-                    }))
-                }
-                InternalBytecode::Unload(binding) => {
-                    ExecutableBytecode::Unload(*bindings.entry(binding).or_insert_with(|| {
-                        let ret = next_binding;
-                        next_binding += 1;
-                        ret
-                    }))
-                }
+                InternalBytecode::Store(binding) => ExecutableBytecode::Store(binding.clone()),
+                InternalBytecode::LoadRef(binding) => ExecutableBytecode::LoadRef(binding.clone()),
+                InternalBytecode::Unload(binding) => ExecutableBytecode::Unload(binding.clone()),
                 InternalBytecode::CallDynamic => ExecutableBytecode::CallDynamic,
             })
             .collect(),
