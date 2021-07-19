@@ -3,8 +3,8 @@ use std::{collections::HashMap, fs::write};
 use egui::{Color32, Label, ScrollArea, TextEdit, Ui, Vec2};
 use rules::{
     executor::{
+        code_generation::generate,
         error::{make_error_message, RuntimeError},
-        new_code_gen::generate,
         semantic_analysis, Executor, ExecutorHeap, ExecutorStack,
     },
     model::{Card, CardId, Game, ZoneId},

@@ -1,4 +1,7 @@
-use std::{collections::HashMap, iter::once};
+use std::{
+    collections::{HashMap, HashSet},
+    iter::once,
+};
 
 use crate::{
     executor::{
@@ -17,6 +20,7 @@ struct SymbolTable<'a> {
 
     fn_labels: Vec<HashMap<&'a str, String>>,
 
+    fn_used_labels: HashSet<&'a str>,
     fn_extra_code: Vec<LabeledBytecode>,
 }
 
@@ -44,11 +48,12 @@ impl<'a> SymbolTable<'a> {
         names
             .iter()
             .map(|name| {
-                let label = if self.get_label_for(*name).is_some() {
+                let label = if self.fn_used_labels.contains(name) {
                     let salted = format!("{}#{}", name, self.next_fn_salt);
                     self.next_fn_salt += 1;
                     salted
                 } else {
+                    self.fn_used_labels.insert(*name);
                     name.to_string()
                 };
                 let top = self.fn_labels.last_mut().unwrap();
@@ -78,6 +83,7 @@ fn generate_internal<'a>(ast: TypedAst<'a>, symbols: &mut SymbolTable<'a>) -> Ve
                 .collect::<Vec<_>>();
 
             match &callee {
+                // this means we're calling a fn directly, so we generate the code and assign it to an anonymous function
                 TypedAst::Fn { .. } => {
                     let label = symbols.next_anon_fn();
                     let mut callee_code = generate_internal(callee, symbols);
@@ -89,7 +95,8 @@ fn generate_internal<'a>(ast: TypedAst<'a>, symbols: &mut SymbolTable<'a>) -> Ve
 
                     arguments
                 }
-                // emits Call with the properlabel if available otherwise emits a std binding load + CallDynamic
+                // if we have a label for the given binding in our scope, then we call that label directly
+                // otherwise we have to load the binding manually, and then call-dynamic with the label on the stack
                 TypedAst::Binding { name, .. } => {
                     arguments.extend(if let Some(label) = symbols.get_label_for(*name) {
                         vec![LabeledBytecode::Call(label.to_string())]
@@ -101,10 +108,12 @@ fn generate_internal<'a>(ast: TypedAst<'a>, symbols: &mut SymbolTable<'a>) -> Ve
                     });
                     arguments
                 }
+                // we should never have a value in this position, as it's impossible to label things directly
                 TypedAst::Value { .. } => {
                     panic!("can't generate code with a value in the function position")
                 }
-                // this should emit call dynamic as the resulting code should evaluate to a Value::Label
+                // the resulting code should evaluate to a Value::Label(..) so we just run that code
+                // and then emit a call-dynamic
                 _ => {
                     arguments.extend(generate_internal(callee, symbols));
                     arguments.push(LabeledBytecode::CallDynamic);
@@ -154,6 +163,8 @@ fn generate_internal<'a>(ast: TypedAst<'a>, symbols: &mut SymbolTable<'a>) -> Ve
                 .flatten()
                 .collect()
         }
+        // for fns we just write the pre/postamble and emit the code directly
+        // the parent node will take care of properly labeling
         TypedAst::Fn { bindings, expr, .. } => {
             let mut to_unload = vec![];
             let mut preamble = vec![];
@@ -173,7 +184,9 @@ fn generate_internal<'a>(ast: TypedAst<'a>, symbols: &mut SymbolTable<'a>) -> Ve
             preamble
         }
         TypedAst::Let { bindings, expr, .. } => {
-            //
+            // if we're binding to a fn, we create labels based on the binding
+            // for the most part label == binding_name
+            // in the case that the it already exists, we'll generate a new label for it
             let new_scoped_labels = bindings
                 .iter()
                 .filter_map(|(name, ast)| {
@@ -193,6 +206,7 @@ fn generate_internal<'a>(ast: TypedAst<'a>, symbols: &mut SymbolTable<'a>) -> Ve
                 .into_iter()
                 .map(|(name, ast)| {
                     if matches!(ast, TypedAst::Fn { .. }) {
+                        // for FNs we have to generate the code, and then apply the label we generated
                         let (_, label) = scoped
                             .iter()
                             .find(|(original_binding, _)| original_binding == &name)

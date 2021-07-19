@@ -1,6 +1,6 @@
 pub mod bytecode;
+pub mod code_generation;
 pub mod error;
-pub mod new_code_gen;
 pub mod rust_funcs;
 pub mod semantic_analysis;
 pub mod value;
