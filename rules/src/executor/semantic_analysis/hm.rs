@@ -9,7 +9,7 @@ use crate::executor::{
 };
 
 pub mod fresh;
-mod substitution;
+pub mod substitution;
 pub mod type_environment;
 pub mod type_schemes;
 pub mod type_tree;
@@ -213,7 +213,9 @@ pub(crate) fn infer<'a>(
         } => {
             let mut sub = Substitution::default();
 
-            let (condition_sub, _) = infer(env, fresh, condition)?;
+            let (condition_sub, cond_ty) = infer(env, fresh, condition)?;
+
+            sub = sub.union(unify(cond_ty, Type::boolean(*condition.span()))?);
 
             sub = sub.union(condition_sub);
 

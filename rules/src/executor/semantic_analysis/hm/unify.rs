@@ -23,7 +23,6 @@ pub fn unify<'a>(lhs: Type<'a>, rhs: Type<'a>) -> Result<Substitution<'a>, TypeE
                 err = Some(TypeError::InvalidType {
                     expected: lhs.clone(),
                     found: rhs.clone(),
-                    span: *rhs_span,
                 });
             }
             let mut sub = Substitution::default();
@@ -38,14 +37,9 @@ pub fn unify<'a>(lhs: Type<'a>, rhs: Type<'a>) -> Result<Substitution<'a>, TypeE
             }
             if let Some(err) = err {
                 match err {
-                    TypeError::InvalidType {
-                        expected,
-                        found,
-                        span,
-                    } => Err(TypeError::InvalidType {
+                    TypeError::InvalidType { expected, found } => Err(TypeError::InvalidType {
                         expected: expected.apply(&sub),
                         found: found.apply(&sub),
-                        span,
                     }),
                     err => Err(err),
                 }

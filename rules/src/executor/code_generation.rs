@@ -50,7 +50,9 @@ impl<'a> SymbolTable<'a> {
             .map(|name| {
                 let label = if self.fn_used_labels.contains(name) {
                     let salted = format!("{}#{}", name, self.next_fn_salt);
-                    self.next_fn_salt += 1;
+                    // we wanna explicitly panic if we cap out on salts, even though
+                    // its unlikely we ever will
+                    self.next_fn_salt = self.next_fn_salt.checked_add(1).unwrap();
                     salted
                 } else {
                     self.fn_used_labels.insert(*name);

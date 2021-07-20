@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, fmt::Display};
 
 use crate::{
     executor::{semantic_analysis::hm::types::Type, value::Value},
@@ -80,6 +80,9 @@ pub enum CompileError<'a> {
 
     #[error("{}", make_error_message("invalid extern", "invalid extern", *.span, &make_line(*.span)))]
     InvalidExtern { name: &'a str, span: Span<'a> },
+
+    #[error("{}", render_list(&.0))]
+    List(Vec<CompileError<'a>>),
 }
 
 impl<'a> From<SymbolError<'a>> for CompileError<'a> {
@@ -96,12 +99,8 @@ impl<'a> From<TypeError<'a>> for CompileError<'a> {
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum TypeError<'a> {
-    #[error("{}", make_error_message("mismatched types", &format!("expected: {}, found: {}", .expected, .found), *.span, &make_line(*.span)))]
-    InvalidType {
-        expected: Type<'a>,
-        found: Type<'a>,
-        span: Span<'a>,
-    },
+    #[error("{}", make_error_message("mismatched types", &format!("expected: {}, found: {}", .expected, .found), *.found.span(), &make_line(*.found.span())))]
+    InvalidType { expected: Type<'a>, found: Type<'a> },
 
     #[error("{}", make_error_message("invalid array", &format!("found multiple types: {}", render_array(.found)), *.span, &make_line(*.span)))]
     InvalidArray {
@@ -134,6 +133,13 @@ pub enum TypeError<'a> {
         error_message = "ambiguous type"
     )]
     UninferredType { ty: Type<'a> },
+}
+
+fn render_list<T: Display>(list: &[T]) -> String {
+    list.iter()
+        .map(ToString::to_string)
+        .intersperse("\n".to_string())
+        .collect()
 }
 
 fn render_array<'a>(found: &BTreeSet<Type<'a>>) -> String {
