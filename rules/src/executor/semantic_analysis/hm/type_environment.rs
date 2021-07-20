@@ -29,13 +29,9 @@ impl<'a> TypeEnvironment<'a> {
             ty,
         }
     }
-    pub(crate) fn apply(&self, rules: &Substitution<'a>) -> Self {
-        Self {
-            map: self
-                .map
-                .iter()
-                .map(|(key, scheme)| (*key, scheme.apply(rules)))
-                .collect(),
+    pub(crate) fn apply(&mut self, rules: &Substitution<'a>) {
+        for scheme in self.map.values_mut() {
+            scheme.apply(rules);
         }
     }
 }

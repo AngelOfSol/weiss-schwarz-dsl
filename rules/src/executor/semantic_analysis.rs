@@ -59,7 +59,7 @@ pub fn semantic_analysis<'a>(
             .map(|def| (def.name, build_type_tree(def.eval.clone(), &mut fresh)))
             .collect(),
         span: *data.span(),
-        ty: Type::Var(fresh.next(), *data.span()),
+        ty: Type::Var(fresh.next_type_variable(), *data.span()),
         expr: Box::new(data),
     };
 

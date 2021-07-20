@@ -114,7 +114,10 @@ pub fn parse_fn<'a>(input: Span<'a>) -> IResult<Span<'a>, Sexpr<'a>> {
                                     parse_type_with_mapping(input, &fresh, &mapping)
                                 }))),
                                 |(span, inner)| {
-                                    inner.unwrap_or(Type::type_var(fresh.borrow_mut().next(), span))
+                                    inner.unwrap_or(Type::type_var(
+                                        fresh.borrow_mut().next_type_variable(),
+                                        span,
+                                    ))
                                 },
                             ),
                         )),
@@ -182,7 +185,10 @@ pub fn parse_type_with_mapping<'a>(
         map(consumed(lexing::identifier), |(span, ident)| {
             let mut mapping = mapping.borrow_mut();
             let mut fresh = fresh.borrow_mut();
-            let tv = mapping.entry(ident).or_insert_with(|| fresh.next()).clone();
+            let tv = mapping
+                .entry(ident)
+                .or_insert_with(|| fresh.next_type_variable())
+                .clone();
             Type::type_var(tv, span)
         }),
     )))(input)

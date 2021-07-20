@@ -4,7 +4,6 @@ use crate::{
     executor::{
         semantic_analysis::hm::{
             substitution::Substitution,
-            type_schemes::TypeScheme,
             types::{Type, TypeName},
             Fresh,
         },
@@ -249,12 +248,12 @@ pub(crate) fn build_type_tree<'a>(sexpr: Sexpr<'a>, fresh: &mut Fresh) -> TypedA
                 .map(|arg| build_type_tree(arg, fresh))
                 .collect(),
             span: span,
-            ty: Type::Var(fresh.next(), span),
+            ty: Type::Var(fresh.next_type_variable(), span),
         },
         Sexpr::Symbol(binding, span) => TypedAst::Binding {
             name: binding,
             span: span,
-            ty: Type::Var(fresh.next(), span),
+            ty: Type::Var(fresh.next_type_variable(), span),
         },
         Sexpr::Integer(value, span) => TypedAst::Value {
             ty: Type::Constant {
@@ -292,7 +291,7 @@ pub(crate) fn build_type_tree<'a>(sexpr: Sexpr<'a>, fresh: &mut Fresh) -> TypedA
             ty: Type::Constant {
                 span: span,
                 name: TypeName::Option,
-                parameters: vec![Type::Var(fresh.next(), span)],
+                parameters: vec![Type::Var(fresh.next_type_variable(), span)],
             },
             value: Value::None,
         },
@@ -302,7 +301,7 @@ pub(crate) fn build_type_tree<'a>(sexpr: Sexpr<'a>, fresh: &mut Fresh) -> TypedA
                 .into_iter()
                 .map(|value| build_type_tree(value, fresh))
                 .collect(),
-            ty: Type::Var(fresh.next(), span),
+            ty: Type::Var(fresh.next_type_variable(), span),
         },
         Sexpr::Fn {
             arguments,
@@ -319,10 +318,10 @@ pub(crate) fn build_type_tree<'a>(sexpr: Sexpr<'a>, fresh: &mut Fresh) -> TypedA
                 return_type: return_type
                     .clone()
                     .map(|ty| ty.remap(&mut bindings, fresh))
-                    .unwrap_or_else(|| Type::Var(fresh.next(), span)),
+                    .unwrap_or_else(|| Type::Var(fresh.next_type_variable(), span)),
                 expr: Box::new(build_type_tree(*eval, fresh)),
                 span: span,
-                ty: Type::Var(fresh.next(), span),
+                ty: Type::Var(fresh.next_type_variable(), span),
             }
         }
         Sexpr::If {
@@ -335,7 +334,7 @@ pub(crate) fn build_type_tree<'a>(sexpr: Sexpr<'a>, fresh: &mut Fresh) -> TypedA
             if_true: Box::new(build_type_tree(*if_true, fresh)),
             if_false: Box::new(build_type_tree(*if_false, fresh)),
             span: span,
-            ty: Type::Var(fresh.next(), span),
+            ty: Type::Var(fresh.next_type_variable(), span),
         },
         Sexpr::Let {
             bindings,
@@ -348,7 +347,7 @@ pub(crate) fn build_type_tree<'a>(sexpr: Sexpr<'a>, fresh: &mut Fresh) -> TypedA
                 .collect(),
             expr: Box::new(build_type_tree(*expr, fresh)),
             span: span,
-            ty: Type::Var(fresh.next(), span),
+            ty: Type::Var(fresh.next_type_variable(), span),
         },
         Sexpr::Seq {
             sub_expressions,
@@ -359,7 +358,7 @@ pub(crate) fn build_type_tree<'a>(sexpr: Sexpr<'a>, fresh: &mut Fresh) -> TypedA
                 .map(|expr| build_type_tree(expr, fresh))
                 .collect(),
             span: span,
-            ty: Type::Var(fresh.next(), span),
+            ty: Type::Var(fresh.next_type_variable(), span),
         },
     }
 }

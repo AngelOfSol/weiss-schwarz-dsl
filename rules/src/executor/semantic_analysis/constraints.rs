@@ -128,7 +128,7 @@ pub(crate) fn infer<'a>(
             let mut type_environment = type_environment.clone();
 
             for (name, inner) in bindings {
-                let fresh_type_variable = Type::type_var(fresh.next(), *inner.span());
+                let fresh_type_variable = Type::type_var(fresh.next_type_variable(), *inner.span());
 
                 type_environment.map.insert(
                     *name,
@@ -140,18 +140,15 @@ pub(crate) fn infer<'a>(
             }
 
             for (name, value) in bindings {
-                let mut sub_unifiers = Vec::new();
-                let value = infer(&mut sub_unifiers, &mut type_environment, fresh, value);
+                let value = infer(unifiers, &mut type_environment, fresh, value);
 
                 // we can ignore the errors here, becuase the top level unification will find them
-                let (subs, _) = unify(sub_unifiers.clone());
+                let (subs, _) = unify(unifiers.clone());
 
                 // we apply the substitutions from the inference here
-                type_environment = type_environment.apply(&subs);
+                type_environment.apply(&subs);
 
-                unifiers.extend(sub_unifiers);
-
-                // we apply the subs here afterward to have proper type variables
+                // and we apply the subs here afterward to have proper type variables
                 let value = value.apply(&subs);
 
                 // so that when we generalize here,
@@ -210,7 +207,8 @@ pub(crate) fn infer<'a>(
             let parameters = bindings
                 .iter()
                 .map(|(binding, ty)| {
-                    let fresh_type_variable = Type::type_var(fresh.next(), *ty.span());
+                    let fresh_type_variable =
+                        Type::type_var(fresh.next_type_variable(), *ty.span());
 
                     type_environment.map.insert(
                         binding,
@@ -265,7 +263,7 @@ pub(crate) fn infer<'a>(
             result_ty
         }
         TypedAst::Array { values, span, ty } => {
-            let fresh_type_variable = Type::type_var(fresh.next(), *span);
+            let fresh_type_variable = Type::type_var(fresh.next_type_variable(), *span);
 
             let values = values
                 .iter()

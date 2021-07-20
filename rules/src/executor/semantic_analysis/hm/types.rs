@@ -1,11 +1,9 @@
-use crate::{
-    executor::semantic_analysis::hm::{substitution::Substitution, Fresh},
-    parsing::Span,
-};
+use crate::{executor::semantic_analysis::hm::substitution::Substitution, parsing::Span};
 use derivative::Derivative;
 use std::{
     collections::{BTreeSet, HashMap},
     fmt::Display,
+    iter::FromIterator,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -49,6 +47,8 @@ impl Display for TypeName {
         }
     }
 }
+pub type Type<'a> = GenericType<'a, TypeVariable>;
+
 #[derive(Derivative)]
 #[derivative(
     PartialEq,
@@ -57,7 +57,7 @@ impl Display for TypeName {
     Ord = "feature_allow_slow_enum"
 )]
 #[derive(Clone, Debug)]
-pub enum Type<'a> {
+pub enum GenericType<'a, TV = TypeVariable> {
     Constant {
         name: TypeName,
         parameters: Vec<Type<'a>>,
@@ -67,7 +67,7 @@ pub enum Type<'a> {
         span: Span<'a>,
     },
     Var(
-        TypeVariable,
+        TV,
         #[derivative(PartialEq = "ignore")]
         #[derivative(PartialOrd = "ignore")]
         #[derivative(Ord = "ignore")]
@@ -175,17 +175,21 @@ impl<'a> Type<'a> {
         }
     }
 
-    pub fn remap(
+    pub fn remap<I: Iterator>(
         self,
-        bindings: &mut HashMap<TypeVariable, TypeVariable>,
-        fresh: &mut Fresh,
-    ) -> Type<'a> {
+        bindings: &mut HashMap<TypeVariable, I::Item>,
+        fresh: &mut I,
+    ) -> GenericType<'a, I::Item>
+    where
+        Vec<GenericType<'a>>: FromIterator<GenericType<'a, <I as Iterator>::Item>>,
+        I::Item: Clone,
+    {
         match self {
             Type::Constant {
                 parameters,
                 name,
                 span,
-            } => Type::Constant {
+            } => GenericType::Constant {
                 parameters: parameters
                     .into_iter()
                     .map(|x| x.remap(bindings, fresh))
@@ -194,8 +198,8 @@ impl<'a> Type<'a> {
                 span,
             },
             Type::Var(v, span) => {
-                let entry = bindings.entry(v).or_insert_with(|| fresh.next());
-                Type::type_var(*entry, span)
+                let entry = bindings.entry(v).or_insert_with(|| fresh.next().unwrap());
+                GenericType::type_var(entry.clone(), span)
             }
         }
     }
@@ -298,7 +302,10 @@ impl<'a> Type<'a> {
             span,
         }
     }
-    pub fn type_var(ty: TypeVariable, span: Span<'a>) -> Self {
+}
+
+impl<'a, TV> GenericType<'a, TV> {
+    pub fn type_var(ty: TV, span: Span<'a>) -> Self {
         Self::Var(ty, span)
     }
 }

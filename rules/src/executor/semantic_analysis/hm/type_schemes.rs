@@ -40,7 +40,7 @@ impl<'a> TypeScheme<'a> {
         self.quantified_variables
             .iter()
             .fold(self.ty.clone(), |acc, elem| {
-                acc.instantiate(*elem, fresh.next())
+                acc.instantiate(*elem, fresh.next_type_variable())
             })
     }
 
@@ -50,15 +50,12 @@ impl<'a> TypeScheme<'a> {
             ty,
         }
     }
-    pub(crate) fn apply(&self, rules: &Substitution<'a>) -> Self {
+    pub(crate) fn apply(&mut self, rules: &Substitution<'a>) {
         let mut rules = rules.clone();
         rules
             .map
             .retain(|(var, _)| self.free_variables().contains(var));
 
-        Self {
-            ty: self.ty.apply(&rules),
-            quantified_variables: self.quantified_variables.clone(),
-        }
+        self.ty = self.ty.apply(&rules);
     }
 }
