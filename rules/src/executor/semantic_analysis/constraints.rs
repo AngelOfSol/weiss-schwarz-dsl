@@ -168,7 +168,7 @@ pub(crate) fn infer<'a>(
                 found: env.map.get(*name).unwrap().new_vars(fresh).with_span(*span),
             });
 
-            ty.clone()
+            env.map.get(*name).unwrap().new_vars(fresh).with_span(*span)
         }
         TypedAst::Value { ty, .. } => ty.clone(),
         TypedAst::Fn {
