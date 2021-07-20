@@ -1,7 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::executor::semantic_analysis::hm::{
-    substitution::Substitution,
     type_schemes::TypeScheme,
     types::{Type, TypeVariable},
 };
@@ -27,15 +26,6 @@ impl<'a> TypeEnvironment<'a> {
                 .cloned()
                 .collect(),
             ty,
-        }
-    }
-    pub(crate) fn apply(&self, rules: &Substitution<'a>) -> Self {
-        Self {
-            map: self
-                .map
-                .iter()
-                .map(|(key, scheme)| (*key, scheme.apply(rules)))
-                .collect(),
         }
     }
 }

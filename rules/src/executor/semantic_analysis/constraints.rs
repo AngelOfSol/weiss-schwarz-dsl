@@ -21,7 +21,7 @@ impl<'a> Constraint<'a> {
     }
 }
 
-pub(crate) fn unify2<'a>(
+pub(crate) fn unify<'a>(
     mut constraints: Vec<Constraint<'a>>,
 ) -> (Substitution<'a>, Vec<TypeError<'a>>) {
     let mut errors = vec![];
@@ -94,7 +94,7 @@ pub(crate) fn unify2<'a>(
     (ret, errors)
 }
 
-pub(crate) fn infer2<'a>(
+pub(crate) fn infer<'a>(
     unifiers: &mut Vec<Constraint<'a>>,
     env: &TypeEnvironment<'a>,
     fresh: &mut Fresh,
@@ -104,11 +104,11 @@ pub(crate) fn infer2<'a>(
         TypedAst::Eval {
             children, span, ty, ..
         } => {
-            let fn_ty = infer2(unifiers, env, fresh, &children[0]);
+            let fn_ty = infer(unifiers, env, fresh, &children[0]);
 
             let mut types = children[1..]
                 .iter()
-                .map(|child| infer2(unifiers, env, fresh, child))
+                .map(|child| infer(unifiers, env, fresh, child))
                 .collect::<Vec<_>>();
             types.push(ty.clone());
 
@@ -137,7 +137,7 @@ pub(crate) fn infer2<'a>(
             }
 
             for (name, value) in bindings {
-                let value = infer2(unifiers, &mut env, fresh, value);
+                let value = infer(unifiers, &mut env, fresh, value);
 
                 unifiers.push(Constraint {
                     expected: env.map[name].ty.clone(),
@@ -153,7 +153,7 @@ pub(crate) fn infer2<'a>(
                 env.map.insert(*name, t_prime);
             }
 
-            let result_ty = infer2(unifiers, &mut env, fresh, expr);
+            let result_ty = infer(unifiers, &mut env, fresh, expr);
 
             unifiers.push(Constraint {
                 expected: ty.clone(),
@@ -207,7 +207,7 @@ pub(crate) fn infer2<'a>(
                 })
                 .collect::<Vec<_>>();
 
-            let inferred = infer2(unifiers, &mut env, fresh, expr);
+            let inferred = infer(unifiers, &mut env, fresh, expr);
 
             let parameters = parameters
                 .into_iter()
@@ -239,7 +239,7 @@ pub(crate) fn infer2<'a>(
                 expected: ty.clone(),
                 found: sub_expressions
                     .iter()
-                    .map(|expr| infer2(unifiers, env, fresh, expr))
+                    .map(|expr| infer(unifiers, env, fresh, expr))
                     .last()
                     .unwrap(),
             };
@@ -255,7 +255,7 @@ pub(crate) fn infer2<'a>(
                 .rev()
                 .map(|value| Constraint {
                     expected: fresh_type_variable.clone().with_span(*value.span()),
-                    found: infer2(unifiers, env, fresh, value),
+                    found: infer(unifiers, env, fresh, value),
                 })
                 .collect::<Vec<_>>();
 
@@ -275,9 +275,9 @@ pub(crate) fn infer2<'a>(
             ty,
             ..
         } => {
-            let condition_ty = infer2(unifiers, env, fresh, condition);
-            let if_true_ty = infer2(unifiers, env, fresh, if_true);
-            let if_false_ty = infer2(unifiers, env, fresh, if_false);
+            let condition_ty = infer(unifiers, env, fresh, condition);
+            let if_true_ty = infer(unifiers, env, fresh, if_true);
+            let if_false_ty = infer(unifiers, env, fresh, if_false);
 
             unifiers.push(Constraint {
                 expected: Type::boolean(*condition.span()),
