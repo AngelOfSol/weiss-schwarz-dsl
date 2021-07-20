@@ -27,6 +27,7 @@ pub enum Value {
     Bool(bool),
     Some(Box<Value>),
     Label(Label),
+    RustFn(&'static str),
     None,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
@@ -95,6 +96,7 @@ impl Display for Value {
             Value::None => write!(f, "none: ?"),
             Value::Some(inner) => write!(f, "some {}?", inner),
             Value::Label(inner) => write!(f, "label@{}", inner.name),
+            Value::RustFn(inner) => write!(f, "rust@{}", inner),
         }
     }
 }

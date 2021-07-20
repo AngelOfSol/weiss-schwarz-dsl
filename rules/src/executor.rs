@@ -123,10 +123,24 @@ impl Executor {
             }
 
             ExecutableBytecode::CallDynamic => {
-                let Label { ip, .. } = self.stack.pop()?;
-                self.ip_stack.push(self.ip);
-                self.ip = ip;
-                false
+                let value = self.stack.pop_any()?;
+
+                match value {
+                    Value::Label(Label { ip, .. }) => {
+                        self.ip_stack.push(self.ip);
+                        self.ip = ip;
+                        false
+                    }
+                    Value::RustFn(name) => {
+                        if let Some(func) = RUST_FN.get(name) {
+                            func(self, game)?;
+                        } else {
+                            return Err(RuntimeError::InvalidFn(name.to_string()));
+                        }
+                        true
+                    }
+                    value => return Err(RuntimeError::InvalidCallDynamic(value)),
+                }
             }
         };
 

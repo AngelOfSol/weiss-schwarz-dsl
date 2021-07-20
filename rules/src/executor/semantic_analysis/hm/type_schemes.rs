@@ -1,6 +1,7 @@
 use std::{collections::BTreeSet, fmt::Display};
 
 use crate::executor::semantic_analysis::hm::{
+    substitution::Substitution,
     types::{Type, TypeVariable},
     Fresh,
 };
@@ -47,6 +48,17 @@ impl<'a> TypeScheme<'a> {
         Self {
             quantified_variables: ty.free_variables(),
             ty,
+        }
+    }
+    pub(crate) fn apply(&self, rules: &Substitution<'a>) -> Self {
+        let mut rules = rules.clone();
+        rules
+            .map
+            .retain(|(var, _)| self.free_variables().contains(var));
+
+        Self {
+            ty: self.ty.apply(&rules),
+            quantified_variables: self.quantified_variables.clone(),
         }
     }
 }

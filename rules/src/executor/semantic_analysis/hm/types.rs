@@ -1,6 +1,12 @@
-use crate::{executor::semantic_analysis::hm::substitution::Substitution, parsing::Span};
+use crate::{
+    executor::semantic_analysis::hm::{substitution::Substitution, Fresh},
+    parsing::Span,
+};
 use derivative::Derivative;
-use std::{collections::BTreeSet, fmt::Display};
+use std::{
+    collections::{BTreeSet, HashMap},
+    fmt::Display,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TypeVariable(usize);
@@ -166,6 +172,31 @@ impl<'a> Type<'a> {
                 span,
             },
             Type::Var(var, _) => Type::Var(var, span),
+        }
+    }
+
+    pub fn remap(
+        self,
+        bindings: &mut HashMap<TypeVariable, TypeVariable>,
+        fresh: &mut Fresh,
+    ) -> Type<'a> {
+        match self {
+            Type::Constant {
+                parameters,
+                name,
+                span,
+            } => Type::Constant {
+                parameters: parameters
+                    .into_iter()
+                    .map(|x| x.remap(bindings, fresh))
+                    .collect(),
+                name,
+                span,
+            },
+            Type::Var(v, span) => {
+                let entry = bindings.entry(v).or_insert_with(|| fresh.next());
+                Type::type_var(*entry, span)
+            }
         }
     }
 

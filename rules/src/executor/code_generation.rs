@@ -8,6 +8,7 @@ use crate::{
         bytecode::{ExecutableBytecode, LabeledBytecode},
         semantic_analysis::hm::TypedAst,
         value::{Label, Value},
+        RUST_FN,
     },
     parsing::ExternDeclaration,
 };
@@ -261,10 +262,21 @@ pub fn generate(
 
     symbols.new_scope(&externs.iter().map(|decl| decl.name).collect::<Vec<_>>());
 
+    let externs = externs
+        .into_iter()
+        .filter(|decl| decl.name != "print")
+        .map(|decl| {
+            vec![
+                LabeledBytecode::Load(Value::RustFn(RUST_FN.get_key_value(decl.name).unwrap().0)),
+                LabeledBytecode::Store(decl.name.to_string()),
+            ]
+        })
+        .flatten();
+
     let internal = generate_internal(ast, &mut symbols);
 
-    let internal = internal
-        .into_iter()
+    let internal = externs
+        .chain(internal)
         .chain(once(LabeledBytecode::Return))
         .collect::<Vec<_>>()
         .into_iter()

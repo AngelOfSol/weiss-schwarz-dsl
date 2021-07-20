@@ -4,6 +4,7 @@ use crate::{
     executor::{
         semantic_analysis::hm::{
             substitution::Substitution,
+            type_schemes::TypeScheme,
             types::{Type, TypeName},
             Fresh,
         },
@@ -71,7 +72,7 @@ impl<'a> Display for TypedAst<'a> {
                     children
                         .iter()
                         .map(ToString::to_string)
-                        .intersperse("".to_string())
+                        .intersperse(" ".to_string())
                         .collect::<String>(),
                     ty
                 )
@@ -308,15 +309,22 @@ pub(crate) fn build_type_tree<'a>(sexpr: Sexpr<'a>, fresh: &mut Fresh) -> TypedA
             eval,
             span,
             return_type,
-        } => TypedAst::Fn {
-            bindings: arguments.clone(),
-            return_type: return_type
-                .clone()
-                .unwrap_or_else(|| Type::Var(fresh.next(), span)),
-            expr: Box::new(build_type_tree(*eval, fresh)),
-            span: span,
-            ty: Type::Var(fresh.next(), span),
-        },
+        } => {
+            let mut bindings = Default::default();
+            TypedAst::Fn {
+                bindings: arguments
+                    .into_iter()
+                    .map(|(name, ty)| (name, ty.remap(&mut bindings, fresh)))
+                    .collect(),
+                return_type: return_type
+                    .clone()
+                    .map(|ty| ty.remap(&mut bindings, fresh))
+                    .unwrap_or_else(|| Type::Var(fresh.next(), span)),
+                expr: Box::new(build_type_tree(*eval, fresh)),
+                span: span,
+                ty: Type::Var(fresh.next(), span),
+            }
+        }
         Sexpr::If {
             condition,
             if_true,

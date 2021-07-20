@@ -170,4 +170,6 @@ pub enum RuntimeError {
     MissingHeapValue(String),
     #[error("invalid fn name \"{0}\"")]
     InvalidFn(String),
+    #[error("invalid call-dynamic, found: {0}, expected: RustFn|Label")]
+    InvalidCallDynamic(Value),
 }

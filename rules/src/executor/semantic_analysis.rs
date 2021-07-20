@@ -79,7 +79,9 @@ pub fn semantic_analysis<'a>(
 
     Ok({
         let mut upper = upper;
+        println!("{}", upper);
         upper.apply(&program_substitutions);
+        println!("{}", upper);
         upper
     })
 }
