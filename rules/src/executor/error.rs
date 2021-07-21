@@ -7,21 +7,13 @@ use crate::{
 use arcstr::Substr;
 use thiserror::Error;
 
-pub fn make_error_message_from_context(
-    error_name: &str,
-    error_message: &str,
-    span: &Span,
-    context: &str,
-) -> String {
-    let fragment = context.lines().nth(span.location_line() as usize).unwrap();
-    make_error_message(error_name, error_message, span, fragment)
-}
-pub fn make_error_message(
-    error_name: &str,
-    error_message: &str,
-    span: &Span,
-    fragment: &str,
-) -> String {
+pub fn make_error_message(error_name: &str, error_message: &str, span: &Span) -> String {
+    let context = span
+        .parent()
+        .lines()
+        .nth(span.location_line() as usize - 1)
+        .unwrap();
+
     format!(
         "{error_name}\n\
             {file_indicator}\n\
@@ -33,7 +25,7 @@ pub fn make_error_message(
         file_indicator = make_file_indicator(span),
         carets = make_caret(span),
         error_name = error_name,
-        fragment = fragment,
+        fragment = context,
         error_message = error_message,
     )
 }
@@ -64,7 +56,7 @@ fn make_caret(span: &Span) -> String {
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum SymbolError {
-    #[error("{}", make_error_message("invalid symbol", "invalid_symbol", .span, &make_line(.span)))]
+    #[error("{}", make_error_message("invalid symbol", "invalid_symbol", .span))]
     InvalidSymbol { name: Substr, span: Span },
 }
 
@@ -75,7 +67,7 @@ pub enum CompileError {
     #[error("type error: {0}")]
     Type(TypeError),
 
-    #[error("{}", make_error_message("invalid extern", "invalid extern", .span, &make_line(.span)))]
+    #[error("{}", make_error_message("invalid extern", "invalid extern", .span))]
     InvalidExtern { name: Substr, span: Span },
 
     #[error("{}", render_list(&.0))]
@@ -96,32 +88,16 @@ impl From<TypeError> for CompileError {
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum TypeError {
-    #[error("{}", make_error_message("mismatched types", &format!("expected: {}, found: {}", .expected, .found), .found.span(), &make_line(.found.span())))]
+    #[error("{}", make_error_message("mismatched types", &format!("expected: {}, found: {}", .expected, .found), .found.span()))]
     InvalidType { expected: Type, found: Type },
 
-    #[error("{}", make_error_message("invalid array", &format!("found multiple types: {}", render_array(.found)), .span, &make_line(.span)))]
+    #[error("{}", make_error_message("invalid array", &format!("found multiple types: {}", render_array(.found)), .span))]
     InvalidArray { found: BTreeSet<Type>, span: Span },
-    #[error("{error_name}\n\
-        {file_indicator}\n  \
-        |\n  \
-        | {fragment}\n  \
-        | {carets} `{left}` <- `{right}`",
-        file_indicator = make_file_indicator(.span),
-        fragment = make_line(.span),
-        carets = make_caret(.span),
-        error_name = "infinite type"
-    )]
+
+    #[error("{}", make_error_message("infinite type", &format!("`{}` <- `{}`", .left, .right), .span))]
     InfiniteType { left: Type, right: Type, span: Span },
-    #[error("{error_message}\n\
-        {file_indicator}\n  \
-        |\n  \
-        | {fragment}\n  \
-        | {carets} {error_message}",
-        file_indicator = make_file_indicator(.ty.span()),
-        fragment = make_line(.ty.span()),
-        carets = make_caret(.ty.span()),
-        error_message = "ambiguous type"
-    )]
+
+    #[error("{}", make_error_message("ambiguous type", "ambiguous type", .ty.span()))]
     UninferredType { ty: Type },
 }
 

@@ -151,7 +151,6 @@ impl DebugUi {
                                             &format!("parsing error: {}", kind),
                                             kind,
                                             &span,
-                                            std::str::from_utf8(span.get_line_beginning()).unwrap(),
                                         )
                                     })
                                     .intersperse("\n".to_string())

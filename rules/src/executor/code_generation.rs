@@ -3,7 +3,7 @@ use std::{
     iter::once,
 };
 
-use arcstr::{ArcStr, Substr};
+use arcstr::Substr;
 
 use crate::{
     executor::{
