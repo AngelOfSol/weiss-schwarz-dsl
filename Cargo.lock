@@ -49,6 +49,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "arcstr"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "514f4b246c9aa8f35393407c55f20df89cae359831c136cd4e61c97cd1dd5dfa"
+
+[[package]]
 name = "arrayvec"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1213,8 +1219,6 @@ dependencies = [
 [[package]]
 name = "nom_locate"
 version = "3.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4689294073dda8a54e484212171efdcb6b12b1908fd70c3dc3eec15b8833b06d"
 dependencies = [
  "bytecount",
  "memchr",
@@ -1464,6 +1468,7 @@ dependencies = [
 name = "rules"
 version = "0.1.0"
 dependencies = [
+ "arcstr",
  "derivative",
  "lazy_static",
  "log",

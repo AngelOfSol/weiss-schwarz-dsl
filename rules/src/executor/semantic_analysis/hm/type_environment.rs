@@ -1,5 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use arcstr::Substr;
+
 use crate::executor::semantic_analysis::hm::{
     substitution::Substitution,
     type_schemes::TypeScheme,
@@ -7,11 +9,11 @@ use crate::executor::semantic_analysis::hm::{
 };
 
 #[derive(Default, Debug, Clone)]
-pub(crate) struct TypeEnvironment<'a> {
-    pub(crate) map: BTreeMap<&'a str, TypeScheme<'a>>,
+pub(crate) struct TypeEnvironment {
+    pub(crate) map: BTreeMap<Substr, TypeScheme>,
 }
 
-impl<'a> TypeEnvironment<'a> {
+impl TypeEnvironment {
     pub(crate) fn free_variables(&self) -> BTreeSet<TypeVariable> {
         self.map
             .values()
@@ -19,7 +21,7 @@ impl<'a> TypeEnvironment<'a> {
             .collect()
     }
 
-    pub(crate) fn generalize(&self, ty: Type<'a>) -> TypeScheme<'a> {
+    pub(crate) fn generalize(&self, ty: Type) -> TypeScheme {
         TypeScheme {
             quantified_variables: ty
                 .free_variables()
@@ -29,7 +31,7 @@ impl<'a> TypeEnvironment<'a> {
             ty,
         }
     }
-    pub(crate) fn apply(&mut self, rules: &Substitution<'a>) {
+    pub(crate) fn apply(&mut self, rules: &Substitution) {
         for scheme in self.map.values_mut() {
             scheme.apply(rules);
         }

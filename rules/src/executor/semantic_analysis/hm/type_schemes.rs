@@ -7,12 +7,12 @@ use crate::executor::semantic_analysis::hm::{
 };
 
 #[derive(Clone, Debug)]
-pub(crate) struct TypeScheme<'a> {
-    pub ty: Type<'a>,
+pub(crate) struct TypeScheme {
+    pub ty: Type,
     pub quantified_variables: BTreeSet<TypeVariable>,
 }
 
-impl<'a> Display for TypeScheme<'a> {
+impl Display for TypeScheme {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -27,7 +27,7 @@ impl<'a> Display for TypeScheme<'a> {
     }
 }
 
-impl<'a> TypeScheme<'a> {
+impl TypeScheme {
     pub(crate) fn free_variables(&self) -> BTreeSet<TypeVariable> {
         self.ty
             .free_variables()
@@ -36,7 +36,7 @@ impl<'a> TypeScheme<'a> {
             .collect()
     }
 
-    pub(crate) fn new_vars(&self, fresh: &mut Fresh) -> Type<'a> {
+    pub(crate) fn new_vars(&self, fresh: &mut Fresh) -> Type {
         self.quantified_variables
             .iter()
             .fold(self.ty.clone(), |acc, elem| {
@@ -44,13 +44,13 @@ impl<'a> TypeScheme<'a> {
             })
     }
 
-    pub(crate) fn generalize_all(ty: Type<'a>) -> Self {
+    pub(crate) fn generalize_all(ty: Type) -> Self {
         Self {
             quantified_variables: ty.free_variables(),
             ty,
         }
     }
-    pub(crate) fn apply(&mut self, rules: &Substitution<'a>) {
+    pub(crate) fn apply(&mut self, rules: &Substitution) {
         let mut rules = rules.clone();
         rules
             .map

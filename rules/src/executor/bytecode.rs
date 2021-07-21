@@ -1,5 +1,7 @@
 use std::fmt::Display;
 
+use arcstr::Substr;
+
 use crate::executor::value::Value;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -21,17 +23,17 @@ pub enum ExecutableBytecode {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum LabeledBytecode {
     Print,
-    Call(String),
+    Call(Substr),
     CallDynamic,
     Load(Value),
-    LoadLabel(String),
-    Jump(String),
-    JumpIf(String),
-    Store(String),
-    LoadRef(String),
-    Unload(String),
+    LoadLabel(Substr),
+    Jump(Substr),
+    JumpIf(Substr),
+    Store(Substr),
+    LoadRef(Substr),
+    Unload(Substr),
     /// NO-OP, specifically added for debugging purposes
-    Label(String),
+    Label(Substr),
     Return,
 }
 

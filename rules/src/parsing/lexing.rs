@@ -1,3 +1,4 @@
+use arcstr::Substr;
 use nom::{
     bytes::complete::{tag, take_until},
     character::complete::{multispace0, one_of},
@@ -5,12 +6,10 @@ use nom::{
     error::{context, ParseError},
     multi::{many0, many1},
     sequence::{delimited, pair},
-    AsChar, IResult as NomResult, InputIter, InputLength, InputTake, InputTakeAtPosition,
+    AsChar, InputIter, InputLength, InputTake, InputTakeAtPosition,
 };
 
-use crate::parsing::Span;
-
-pub type IResult<I, O, E = nom::error::VerboseError<I>> = NomResult<I, O, E>;
+use crate::parsing::{IResult, Span};
 
 macro_rules! contextual_tag {
     ($value:expr) => {
@@ -18,8 +17,8 @@ macro_rules! contextual_tag {
     };
 }
 
-fn from_span(span: Span) -> &str {
-    *span.fragment()
+fn from_span(span: Span) -> Substr {
+    span.fragment().0.clone()
 }
 
 pub fn ws<F, I, O, E: ParseError<I>>(inner: F) -> impl FnMut(I) -> IResult<I, O, E>
@@ -32,7 +31,7 @@ where
     delimited(multispace0, inner, multispace0)
 }
 
-pub fn identifier(input: Span) -> IResult<Span, &str> {
+pub fn identifier(input: Span) -> IResult<Span, Substr> {
     map(
         ws(recognize(pair(
             one_of("-+=abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"),
@@ -50,7 +49,7 @@ pub fn number(input: Span) -> IResult<Span, i32> {
     })(input)
 }
 
-pub fn raw_string(input: Span) -> IResult<Span, &str> {
+pub fn raw_string(input: Span) -> IResult<Span, Substr> {
     map(
         ws(delimited(
             contextual_tag!("\""),

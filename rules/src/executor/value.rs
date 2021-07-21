@@ -101,27 +101,6 @@ impl Display for Value {
     }
 }
 
-impl<'a> TryFrom<Sexpr<'a>> for Value {
-    type Error = Sexpr<'a>;
-
-    fn try_from(value: Sexpr<'a>) -> Result<Self, Self::Error> {
-        match value {
-            Sexpr::Integer(integer, ..) => Ok(Value::Integer(integer)),
-            Sexpr::Zone(zone, ..) => Ok(Value::Zone(zone)),
-            Sexpr::Unit(..) => Ok(Value::Unit),
-            Sexpr::Bool(value, ..) => Ok(Value::Bool(value)),
-            Sexpr::None(..) => Ok(Value::None),
-            x @ Sexpr::Array { .. }
-            | x @ Sexpr::Symbol(_, ..)
-            | x @ Sexpr::Let { .. }
-            | x @ Sexpr::If { .. }
-            | x @ Sexpr::Eval { .. }
-            | x @ Sexpr::Fn { .. }
-            | x @ Sexpr::Seq { .. } => Err(x),
-        }
-    }
-}
-
 macro_rules! impl_variant {
     ($variant_name:ident, $impl_type:ty) => {
         impl ValueFrom for $impl_type {

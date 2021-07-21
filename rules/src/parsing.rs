@@ -1,7 +1,9 @@
+pub mod input_type;
 pub mod lexing;
 
 use std::{cell::RefCell, collections::HashMap, fmt::Display};
 
+use arcstr::{ArcStr, Substr};
 use nom::{
     branch::alt,
     bytes::complete::tag,
@@ -12,7 +14,9 @@ use nom::{
 };
 use nom_locate::LocatedSpan;
 
-use crate::{executor::semantic_analysis::hm::types::TypeVariable, model::ZoneId};
+use crate::{
+    executor::semantic_analysis::hm::types::TypeVariable, model::ZoneId, parsing::input_type::Input,
+};
 use crate::{
     executor::semantic_analysis::hm::{type_schemes::TypeScheme, types::Type, Fresh},
     parsing::lexing::ws,
@@ -23,11 +27,18 @@ pub use nom::{
     Err,
 };
 
-pub type SpanFileName<'a> = &'a str;
+pub type SpanContent = Input;
 
-pub type Span<'a> = LocatedSpan<&'a str, SpanFileName<'a>>;
+pub type Span = LocatedSpan<SpanContent, ArcStr>;
 
 pub type IResult<I, O, E = VerboseError<I>> = NomResult<I, O, E>;
+
+pub fn input(data: String, file_name: String) -> Span {
+    Span::new_extra(
+        Input(Substr::full(ArcStr::from(data))),
+        ArcStr::from(file_name),
+    )
+}
 
 pub fn parse_sexpr(input: Span) -> IResult<Span, Sexpr> {
     map(
@@ -36,10 +47,7 @@ pub fn parse_sexpr(input: Span) -> IResult<Span, Sexpr> {
             cut(many1(parse_sexpr_value)),
             lexing::close,
         )),
-        |(span, arguments)| Sexpr::Eval {
-            arguments,
-            span: span,
-        },
+        |(span, arguments)| Sexpr::Eval { arguments, span },
     )(input)
 }
 pub fn parse_seq(input: Span) -> IResult<Span, Sexpr> {
@@ -51,7 +59,7 @@ pub fn parse_seq(input: Span) -> IResult<Span, Sexpr> {
         )),
         |(span, sub_expressions)| Sexpr::Seq {
             sub_expressions,
-            span: span,
+            span,
         },
     )(input)
 }
@@ -96,7 +104,7 @@ pub fn parse_let(input: Span) -> IResult<Span, Sexpr> {
     )(input)
 }
 
-pub fn parse_fn<'a>(input: Span<'a>) -> IResult<Span<'a>, Sexpr<'a>> {
+pub fn parse_fn(input: Span) -> IResult<Span, Sexpr> {
     let fresh = RefCell::new(Fresh::default());
     let mapping = RefCell::new(HashMap::default());
     let (input, result) = map(
@@ -142,24 +150,24 @@ pub fn parse_fn<'a>(input: Span<'a>) -> IResult<Span<'a>, Sexpr<'a>> {
     Ok((input, result))
 }
 
-pub fn parse_type<'a>(input: Span<'a>) -> IResult<Span<'a>, Type<'a>> {
+pub fn parse_type(input: Span) -> IResult<Span, Type> {
     let fresh = RefCell::new(Fresh::default());
     let mapping = RefCell::new(HashMap::default());
 
     parse_type_with_mapping(input, &fresh, &mapping)
 }
 
-pub(crate) fn parse_type_scheme<'a>(input: Span<'a>) -> IResult<Span<'a>, TypeScheme<'a>> {
+pub(crate) fn parse_type_scheme(input: Span) -> IResult<Span, TypeScheme> {
     let (input, ty) = ws(parse_type)(input)?;
 
     Ok((input, TypeScheme::generalize_all(ty)))
 }
 
-pub fn parse_type_with_mapping<'a>(
-    input: Span<'a>,
+pub fn parse_type_with_mapping(
+    input: Span,
     fresh: &RefCell<Fresh>,
-    mapping: &RefCell<HashMap<&'a str, TypeVariable>>,
-) -> IResult<Span<'a>, Type<'a>> {
+    mapping: &RefCell<HashMap<Substr, TypeVariable>>,
+) -> IResult<Span, Type> {
     ws(alt((
         map(recognize(ws(tag("i32"))), Type::integer),
         map(recognize(ws(tag("()"))), Type::unit),
@@ -194,10 +202,10 @@ pub fn parse_type_with_mapping<'a>(
     )))(input)
 }
 pub fn parse_fn_type<'a>(
-    input: Span<'a>,
+    input: Span,
     fresh: &RefCell<Fresh>,
-    mapping: &RefCell<HashMap<&'a str, TypeVariable>>,
-) -> IResult<Span<'a>, Type<'a>> {
+    mapping: &RefCell<HashMap<Substr, TypeVariable>>,
+) -> IResult<Span, Type> {
     let (input, (span, (mut args, ret))) = consumed(tuple((
         delimited(
             tuple((tag("fn"), lexing::open)),
@@ -210,7 +218,7 @@ pub fn parse_fn_type<'a>(
             parse_type_with_mapping(input, fresh, mapping)
         })),
     )))(input)?;
-    args.push(ret.unwrap_or(Type::unit(input)));
+    args.push(ret.unwrap_or(Type::unit(input.clone())));
 
     Ok((input, Type::function(args, span)))
 }
@@ -232,7 +240,7 @@ pub fn parse_if(input: Span) -> IResult<Span, Sexpr> {
         |(span, (condition, if_true, if_false))| Sexpr::If {
             condition: Box::new(condition),
             if_true: Box::new(if_true),
-            if_false: Box::new(if_false.unwrap_or(Sexpr::Unit(span))),
+            if_false: Box::new(if_false.unwrap_or(Sexpr::Unit(span.clone()))),
             span,
         },
     )(input)
@@ -291,55 +299,55 @@ pub fn parse_unit(input: Span) -> IResult<Span, Sexpr> {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub enum Sexpr<'a> {
+pub enum Sexpr {
     Eval {
-        arguments: Vec<Sexpr<'a>>,
-        span: Span<'a>,
+        arguments: Vec<Sexpr>,
+        span: Span,
     },
-    Symbol(&'a str, Span<'a>),
-    Integer(i32, Span<'a>),
-    Bool(bool, Span<'a>),
-    Zone(ZoneId, Span<'a>),
-    Unit(Span<'a>),
-    None(Span<'a>),
+    Symbol(Substr, Span),
+    Integer(i32, Span),
+    Bool(bool, Span),
+    Zone(ZoneId, Span),
+    Unit(Span),
+    None(Span),
     Array {
-        values: Vec<Sexpr<'a>>,
-        span: Span<'a>,
+        values: Vec<Sexpr>,
+        span: Span,
     },
     Fn {
-        arguments: Vec<(&'a str, Type<'a>)>,
-        return_type: Option<Type<'a>>,
-        eval: Box<Sexpr<'a>>,
-        span: Span<'a>,
+        arguments: Vec<(Substr, Type)>,
+        return_type: Option<Type>,
+        eval: Box<Sexpr>,
+        span: Span,
     },
     If {
-        condition: Box<Sexpr<'a>>,
-        if_true: Box<Sexpr<'a>>,
-        if_false: Box<Sexpr<'a>>,
-        span: Span<'a>,
+        condition: Box<Sexpr>,
+        if_true: Box<Sexpr>,
+        if_false: Box<Sexpr>,
+        span: Span,
     },
     Let {
-        bindings: Vec<(&'a str, Sexpr<'a>)>,
-        expr: Box<Sexpr<'a>>,
-        span: Span<'a>,
+        bindings: Vec<(Substr, Sexpr)>,
+        expr: Box<Sexpr>,
+        span: Span,
     },
     Seq {
-        sub_expressions: Vec<Sexpr<'a>>,
-        span: Span<'a>,
+        sub_expressions: Vec<Sexpr>,
+        span: Span,
     },
 }
 
-impl<'a> Sexpr<'a> {
-    pub fn try_into_symbol(self) -> Result<&'a str, Self> {
+impl Sexpr {
+    pub fn try_into_symbol(self) -> Result<Substr, Self> {
         if let Self::Symbol(v, ..) = self {
-            Ok(v)
+            Ok(v.clone())
         } else {
             Err(self)
         }
     }
 }
 
-impl<'a> Display for Sexpr<'a> {
+impl<'a> Display for Sexpr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Sexpr::Eval { arguments, .. } => {
@@ -371,7 +379,8 @@ impl<'a> Display for Sexpr<'a> {
                     .join(","),
                 return_type
                     .as_ref()
-                    .unwrap_or(&Type::unit(Span::new_extra("", ""))),
+                    .map(|x| x.to_string())
+                    .unwrap_or("()".to_string()),
                 eval
             ),
             Sexpr::If {
@@ -418,26 +427,26 @@ impl<'a> Display for Sexpr<'a> {
 }
 
 #[derive(Debug, Clone)]
-pub struct ExternDeclaration<'a> {
-    pub name: &'a str,
-    pub(crate) type_scheme: TypeScheme<'a>,
-    pub span: Span<'a>,
+pub struct ExternDeclaration {
+    pub name: Substr,
+    pub(crate) type_scheme: TypeScheme,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone)]
-pub struct Include<'a> {
-    pub path: &'a str,
+pub struct Include {
+    pub path: Substr,
 }
 
 #[derive(Debug)]
-enum Preamble<'a> {
-    Extern(ExternDeclaration<'a>),
-    Definition(FunctionDefinition<'a>),
-    Include(Include<'a>),
+enum Preamble {
+    Extern(ExternDeclaration),
+    Definition(FunctionDefinition),
+    Include(Include),
 }
 
-impl<'a> Preamble<'a> {
-    fn try_into_extern(self) -> Result<ExternDeclaration<'a>, Self> {
+impl Preamble {
+    fn try_into_extern(self) -> Result<ExternDeclaration, Self> {
         if let Self::Extern(v) = self {
             Ok(v)
         } else {
@@ -445,7 +454,7 @@ impl<'a> Preamble<'a> {
         }
     }
 
-    fn try_into_definition(self) -> Result<FunctionDefinition<'a>, Self> {
+    fn try_into_definition(self) -> Result<FunctionDefinition, Self> {
         if let Self::Definition(v) = self {
             Ok(v)
         } else {
@@ -453,7 +462,7 @@ impl<'a> Preamble<'a> {
         }
     }
 
-    fn try_into_include(self) -> Result<Include<'a>, Self> {
+    fn try_into_include(self) -> Result<Include, Self> {
         if let Self::Include(v) = self {
             Ok(v)
         } else {
@@ -548,10 +557,10 @@ pub fn parse_extern(input: Span) -> IResult<Span, ExternDeclaration> {
     map(
         consumed(delimited(
             lexing::open,
-            cut(preceded(
+            preceded(
                 ws(tag("extern")),
-                pair(lexing::identifier, parse_type_scheme),
-            )),
+                cut(pair(lexing::identifier, parse_type_scheme)),
+            ),
             lexing::close,
         )),
         |(span, (name, type_scheme))| ExternDeclaration {
@@ -563,20 +572,20 @@ pub fn parse_extern(input: Span) -> IResult<Span, ExternDeclaration> {
 }
 
 #[derive(Debug, Clone)]
-pub struct FunctionDefinition<'a> {
-    pub name: &'a str,
-    pub eval: Sexpr<'a>,
-    pub span: Span<'a>,
+pub struct FunctionDefinition {
+    pub name: Substr,
+    pub eval: Sexpr,
+    pub span: Span,
 }
 
 pub fn parse_fn_definition(input: Span) -> IResult<Span, FunctionDefinition> {
     map(
         consumed(delimited(
             lexing::open,
-            cut(preceded(
+            preceded(
                 ws(tag("define")),
-                pair(lexing::identifier, ws(parse_fn)),
-            )),
+                cut(pair(lexing::identifier, ws(parse_fn))),
+            ),
             lexing::close,
         )),
         |(span, (name, eval))| FunctionDefinition { name, eval, span },
@@ -587,7 +596,7 @@ pub fn parse_include(input: Span) -> IResult<Span, Include> {
     map(
         delimited(
             lexing::open,
-            cut(preceded(ws(tag("include")), lexing::raw_string)),
+            preceded(ws(tag("include")), cut(lexing::raw_string)),
             lexing::close,
         ),
         |path| Include { path },

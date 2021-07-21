@@ -3,10 +3,7 @@ use crate::{
     parsing::Sexpr,
 };
 
-pub fn check_symbol_validity<'a>(
-    ast: &'a Sexpr,
-    mut symbols: SymbolTable<'a>,
-) -> Result<(), SymbolError<'a>> {
+pub fn check_symbol_validity(ast: &Sexpr, mut symbols: SymbolTable) -> Result<(), SymbolError> {
     match ast {
         Sexpr::Eval { arguments, .. } => {
             for argument in arguments.iter() {
@@ -25,8 +22,8 @@ pub fn check_symbol_validity<'a>(
                 Ok(())
             } else {
                 Err(SymbolError::InvalidSymbol {
-                    name: symbol,
-                    span: *span,
+                    name: symbol.clone(),
+                    span: span.clone(),
                 })
             }
         }
@@ -42,7 +39,7 @@ pub fn check_symbol_validity<'a>(
             arguments, eval, ..
         } => {
             for (binding, _) in arguments {
-                symbols.insert(*binding);
+                symbols.insert(binding.clone());
             }
             check_symbol_validity(eval, symbols)
         }
@@ -50,7 +47,7 @@ pub fn check_symbol_validity<'a>(
             for (_, binding_expr) in bindings.iter() {
                 check_symbol_validity(binding_expr, symbols.clone())?;
             }
-            symbols.extend(bindings.iter().map(|(binding, _)| binding));
+            symbols.extend(bindings.iter().map(|(binding, _)| binding).cloned());
 
             check_symbol_validity(expr, symbols)
         }

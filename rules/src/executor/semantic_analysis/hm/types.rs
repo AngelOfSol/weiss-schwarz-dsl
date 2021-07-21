@@ -47,7 +47,7 @@ impl Display for TypeName {
         }
     }
 }
-pub type Type<'a> = GenericType<'a, TypeVariable>;
+pub type Type = GenericType<TypeVariable>;
 
 #[derive(Derivative)]
 #[derivative(
@@ -57,25 +57,25 @@ pub type Type<'a> = GenericType<'a, TypeVariable>;
     Ord = "feature_allow_slow_enum"
 )]
 #[derive(Clone, Debug)]
-pub enum GenericType<'a, TV = TypeVariable> {
+pub enum GenericType<TV = TypeVariable> {
     Constant {
         name: TypeName,
-        parameters: Vec<Type<'a>>,
+        parameters: Vec<GenericType<TV>>,
         #[derivative(PartialEq = "ignore")]
         #[derivative(PartialOrd = "ignore")]
         #[derivative(Ord = "ignore")]
-        span: Span<'a>,
+        span: Span,
     },
     Var(
         TV,
         #[derivative(PartialEq = "ignore")]
         #[derivative(PartialOrd = "ignore")]
         #[derivative(Ord = "ignore")]
-        Span<'a>,
+        Span,
     ),
 }
 
-impl<'a> Display for Type<'a> {
+impl Display for Type {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Type::Constant {
@@ -119,7 +119,7 @@ impl<'a> Display for Type<'a> {
     }
 }
 
-impl<'a> Type<'a> {
+impl Type {
     pub fn is_concrete(&self) -> bool {
         match self {
             Type::Constant { parameters, .. } => parameters.iter().all(|child| child.is_concrete()),
@@ -156,13 +156,13 @@ impl<'a> Type<'a> {
             Type::Var(idx, ..) => maplit::btreeset! { *idx },
         }
     }
-    pub fn span(&self) -> &Span<'a> {
+    pub fn span(&self) -> &Span {
         match self {
             Type::Constant { span, .. } => span,
             Type::Var(_, span) => span,
         }
     }
-    pub fn with_span(self, span: Span<'a>) -> Type<'a> {
+    pub fn with_span(self, span: Span) -> Type {
         match self {
             Type::Constant {
                 name, parameters, ..
@@ -179,9 +179,9 @@ impl<'a> Type<'a> {
         self,
         bindings: &mut HashMap<TypeVariable, I::Item>,
         fresh: &mut I,
-    ) -> GenericType<'a, I::Item>
+    ) -> GenericType<I::Item>
     where
-        Vec<GenericType<'a>>: FromIterator<GenericType<'a, <I as Iterator>::Item>>,
+        Vec<GenericType>: FromIterator<GenericType<<I as Iterator>::Item>>,
         I::Item: Clone,
     {
         match self {
@@ -223,7 +223,7 @@ impl<'a> Type<'a> {
         }
     }
 
-    fn apply_rule(&mut self, left: &TypeVariable, ty: &Type<'a>) {
+    fn apply_rule(&mut self, left: &TypeVariable, ty: &Type) {
         match self {
             Type::Constant { parameters, .. } => {
                 for parameter in parameters {
@@ -232,12 +232,12 @@ impl<'a> Type<'a> {
             }
             Type::Var(v, span) => {
                 if v == left {
-                    *self = ty.clone().with_span(*span);
+                    *self = ty.clone().with_span(span.clone());
                 }
             }
         }
     }
-    pub(crate) fn apply(&self, rules: &Substitution<'a>) -> Self {
+    pub(crate) fn apply(&self, rules: &Substitution) -> Self {
         let mut ret = self.clone();
         for (left, ty) in rules.map.iter() {
             ret.apply_rule(left, ty)
@@ -245,49 +245,49 @@ impl<'a> Type<'a> {
         ret
     }
 
-    pub fn integer(span: Span<'a>) -> Self {
+    pub fn integer(span: Span) -> Self {
         Self::Constant {
             name: TypeName::Integer,
             parameters: vec![],
             span,
         }
     }
-    pub fn unit(span: Span<'a>) -> Self {
+    pub fn unit(span: Span) -> Self {
         Self::Constant {
             name: TypeName::Unit,
             parameters: vec![],
             span,
         }
     }
-    pub fn boolean(span: Span<'a>) -> Self {
+    pub fn boolean(span: Span) -> Self {
         Self::Constant {
             name: TypeName::Bool,
             parameters: vec![],
             span,
         }
     }
-    pub fn zone(span: Span<'a>) -> Self {
+    pub fn zone(span: Span) -> Self {
         Self::Constant {
             name: TypeName::Zone,
             parameters: vec![],
             span,
         }
     }
-    pub fn card(span: Span<'a>) -> Self {
+    pub fn card(span: Span) -> Self {
         Self::Constant {
             name: TypeName::Card,
             parameters: vec![],
             span,
         }
     }
-    pub fn option(ty: Type<'a>, span: Span<'a>) -> Self {
+    pub fn option(ty: Type, span: Span) -> Self {
         Self::Constant {
             name: TypeName::Option,
             parameters: vec![ty],
             span,
         }
     }
-    pub fn array(ty: Type<'a>, span: Span<'a>) -> Self {
+    pub fn array(ty: Type, span: Span) -> Self {
         Self::Constant {
             name: TypeName::Array,
             parameters: vec![ty],
@@ -295,7 +295,7 @@ impl<'a> Type<'a> {
         }
     }
 
-    pub fn function(tys: Vec<Type<'a>>, span: Span<'a>) -> Self {
+    pub fn function(tys: Vec<Type>, span: Span) -> Self {
         Self::Constant {
             name: TypeName::Fn,
             parameters: tys,
@@ -304,8 +304,8 @@ impl<'a> Type<'a> {
     }
 }
 
-impl<'a, TV> GenericType<'a, TV> {
-    pub fn type_var(ty: TV, span: Span<'a>) -> Self {
+impl<TV> GenericType<TV> {
+    pub fn type_var(ty: TV, span: Span) -> Self {
         Self::Var(ty, span)
     }
 }

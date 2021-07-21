@@ -9,13 +9,13 @@ use crate::executor::{
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Constraint<'a> {
-    pub expected: Type<'a>,
-    pub found: Type<'a>,
+pub(crate) struct Constraint {
+    pub expected: Type,
+    pub found: Type,
 }
 
-impl<'a> Constraint<'a> {
-    fn apply(mut self, sub: &Substitution<'a>) -> Self {
+impl Constraint {
+    fn apply(mut self, sub: &Substitution) -> Self {
         self.expected = self.expected.apply(sub);
         self.found = self.found.apply(sub);
 
@@ -23,9 +23,7 @@ impl<'a> Constraint<'a> {
     }
 }
 
-pub(crate) fn unify<'a>(
-    mut constraints: Vec<Constraint<'a>>,
-) -> (Substitution<'a>, Vec<TypeError<'a>>) {
+pub(crate) fn unify(mut constraints: Vec<Constraint>) -> (Substitution, Vec<TypeError>) {
     let mut errors = vec![];
     let mut ret = Substitution::default();
     while let Some(constraint) = constraints.pop() {
@@ -74,9 +72,9 @@ pub(crate) fn unify<'a>(
             (any, Type::Var(tvar, span)) | (Type::Var(tvar, span), any) => {
                 if any.occurs(tvar) {
                     errors.push(TypeError::InfiniteType {
-                        left: Type::Var(*tvar, *span),
+                        left: Type::Var(*tvar, span.clone()),
                         right: any.clone(),
-                        span: *span,
+                        span: span.clone(),
                     });
                     continue;
                 } else {
@@ -95,12 +93,12 @@ pub(crate) fn unify<'a>(
     (ret, errors)
 }
 
-pub(crate) fn infer<'a>(
-    unifiers: &mut Vec<Constraint<'a>>,
-    type_environment: &TypeEnvironment<'a>,
+pub(crate) fn infer(
+    unifiers: &mut Vec<Constraint>,
+    type_environment: &TypeEnvironment,
     fresh: &mut Fresh,
-    tt: &TypedAst<'a>,
-) -> Type<'a> {
+    tt: &TypedAst,
+) -> Type {
     match tt {
         TypedAst::Eval {
             children, span, ty, ..
@@ -113,7 +111,7 @@ pub(crate) fn infer<'a>(
                 .collect::<Vec<_>>();
             types.push(ty.clone());
 
-            let found = Type::function(types, *span);
+            let found = Type::function(types, span.clone());
 
             unifiers.push(Constraint {
                 expected: fn_ty,
@@ -128,10 +126,11 @@ pub(crate) fn infer<'a>(
             let mut type_environment = type_environment.clone();
 
             for (name, inner) in bindings {
-                let fresh_type_variable = Type::type_var(fresh.next_type_variable(), *inner.span());
+                let fresh_type_variable =
+                    Type::type_var(fresh.next_type_variable(), inner.span().clone());
 
                 type_environment.map.insert(
-                    *name,
+                    name.clone(),
                     TypeScheme {
                         ty: fresh_type_variable,
                         quantified_variables: BTreeSet::new(),
@@ -157,7 +156,7 @@ pub(crate) fn infer<'a>(
 
                 // then we insert the proper generalized version
                 // into the environment
-                type_environment.map.insert(*name, t_prime);
+                type_environment.map.insert(name.clone(), t_prime);
             }
 
             let result_ty = infer(unifiers, &mut type_environment, fresh, expr);
@@ -172,10 +171,10 @@ pub(crate) fn infer<'a>(
         TypedAst::Binding { name, span, ty } => {
             let found = type_environment
                 .map
-                .get(*name)
+                .get(name)
                 .unwrap()
                 .new_vars(fresh)
-                .with_span(*span);
+                .with_span(span.clone());
 
             unifiers.push(Constraint {
                 expected: ty.clone(),
@@ -201,17 +200,17 @@ pub(crate) fn infer<'a>(
                     .map(|(_, lhs)| lhs.clone())
                     .chain(once(return_type.clone()))
                     .collect(),
-                *span,
+                span.clone(),
             );
 
             let parameters = bindings
                 .iter()
                 .map(|(binding, ty)| {
                     let fresh_type_variable =
-                        Type::type_var(fresh.next_type_variable(), *ty.span());
+                        Type::type_var(fresh.next_type_variable(), ty.span().clone());
 
                     type_environment.map.insert(
-                        binding,
+                        binding.clone(),
                         TypeScheme {
                             ty: fresh_type_variable.clone(),
                             quantified_variables: BTreeSet::new(),
@@ -229,7 +228,7 @@ pub(crate) fn infer<'a>(
                 .chain(once(inferred))
                 .collect::<Vec<_>>();
 
-            let result_ty = Type::function(parameters.clone(), *expr.span());
+            let result_ty = Type::function(parameters.clone(), expr.span().clone());
 
             unifiers.extend(vec![
                 // this checks to make sure that our declaration and our inferred types match properly
@@ -263,20 +262,20 @@ pub(crate) fn infer<'a>(
             result_ty
         }
         TypedAst::Array { values, span, ty } => {
-            let fresh_type_variable = Type::type_var(fresh.next_type_variable(), *span);
+            let fresh_type_variable = Type::type_var(fresh.next_type_variable(), span.clone());
 
             let values = values
                 .iter()
                 .rev()
                 .map(|value| Constraint {
-                    expected: fresh_type_variable.clone().with_span(*value.span()),
+                    expected: fresh_type_variable.clone().with_span(value.span().clone()),
                     found: infer(unifiers, type_environment, fresh, value),
                 })
                 .collect::<Vec<_>>();
 
             unifiers.extend(values);
 
-            let result_ty = Type::array(fresh_type_variable, *span);
+            let result_ty = Type::array(fresh_type_variable, span.clone());
             unifiers.push(Constraint {
                 expected: ty.clone(),
                 found: result_ty.clone(),
@@ -296,15 +295,15 @@ pub(crate) fn infer<'a>(
             let if_false_ty = infer(unifiers, type_environment, fresh, if_false);
 
             unifiers.push(Constraint {
-                expected: Type::boolean(*condition.span()),
+                expected: Type::boolean(condition.span().clone()),
                 found: condition_ty,
             });
             unifiers.push(Constraint {
-                expected: ty.clone().with_span(*if_true.span()),
+                expected: ty.clone().with_span(if_true.span().clone()),
                 found: if_false_ty.clone(),
             });
             unifiers.push(Constraint {
-                expected: ty.clone().with_span(*if_true.span()),
+                expected: ty.clone().with_span(if_true.span().clone()),
                 found: if_true_ty.clone(),
             });
 

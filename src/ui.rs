@@ -12,7 +12,7 @@ use rules::{
         semantic_analysis, Executor, Heap, Stack,
     },
     model::{Card, CardId, Game, ZoneId},
-    parsing::{parse_included_file, parse_program, Span},
+    parsing::{input, parse_included_file, parse_program, Span},
 };
 use semantic_analysis::semantic_analysis;
 use serde::{Deserialize, Serialize};
@@ -129,8 +129,7 @@ impl DebugUi {
                         });
 
                     if ui.button("Run").clicked() && !self.console_input.is_empty() {
-                        let temp = self.console_input.clone();
-                        let ci = Span::new_extra(&temp, "<editor>");
+                        let ci = input(self.console_input.clone(), "<editor>".to_string());
                         let result = parse_program(ci)
                             .map_err(|err| match err {
                                 rules::parsing::Err::Incomplete(_) => todo!(),
@@ -151,7 +150,7 @@ impl DebugUi {
                                         make_error_message(
                                             &format!("parsing error: {}", kind),
                                             kind,
-                                            span,
+                                            &span,
                                             std::str::from_utf8(span.get_line_beginning()).unwrap(),
                                         )
                                     })
@@ -162,7 +161,7 @@ impl DebugUi {
                                 let includes = includes
                                     .into_iter()
                                     .flat_map(|include| {
-                                        std::fs::read(&include.path)
+                                        std::fs::read(&include.path.as_str())
                                             .ok()
                                             .and_then(|result| String::from_utf8(result).ok())
                                             .map(|i| (include.path, i))
@@ -171,8 +170,11 @@ impl DebugUi {
 
                                 for (path, include) in includes.iter() {
                                     let (_, (included_externs, included_defintions)) =
-                                        parse_included_file(Span::new_extra(&include, path))
-                                            .map_err(|err| err.to_string())?;
+                                        parse_included_file(input(
+                                            include.clone(),
+                                            path.as_str().to_string(),
+                                        ))
+                                        .map_err(|err| err.to_string())?;
                                     externs.extend(included_externs);
                                     defintions.extend(included_defintions);
                                 }

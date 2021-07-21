@@ -4,25 +4,22 @@ use crate::{
     executor::{semantic_analysis::hm::types::Type, value::Value},
     parsing::Span,
 };
+use arcstr::Substr;
 use thiserror::Error;
 
 pub fn make_error_message_from_context(
     error_name: &str,
     error_message: &str,
-    span: Span,
+    span: &Span,
     context: &str,
 ) -> String {
-    make_error_message(
-        error_name,
-        error_message,
-        span,
-        context.lines().nth(span.location_line() as usize).unwrap(),
-    )
+    let fragment = context.lines().nth(span.location_line() as usize).unwrap();
+    make_error_message(error_name, error_message, span, fragment)
 }
 pub fn make_error_message(
     error_name: &str,
     error_message: &str,
-    span: Span,
+    span: &Span,
     fragment: &str,
 ) -> String {
     format!(
@@ -41,7 +38,7 @@ pub fn make_error_message(
     )
 }
 
-fn make_file_indicator(span: Span) -> String {
+fn make_file_indicator(span: &Span) -> String {
     format!(
         " --> {filename}:{line}:{column}",
         filename = span.extra,
@@ -50,13 +47,13 @@ fn make_file_indicator(span: Span) -> String {
     )
 }
 
-fn make_line(span: Span) -> String {
+fn make_line(span: &Span) -> String {
     format!(
         "{}",
         std::str::from_utf8(span.get_line_beginning()).unwrap()
     )
 }
-fn make_caret(span: Span) -> String {
+fn make_caret(span: &Span) -> String {
     format!(
         "{blank:>column$}{blank:^>len$}",
         blank = "",
@@ -66,73 +63,66 @@ fn make_caret(span: Span) -> String {
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
-pub enum SymbolError<'a> {
-    #[error("{}", make_error_message("invalid symbol", "invalid_symbol", *.span, &make_line(*.span)))]
-    InvalidSymbol { name: &'a str, span: Span<'a> },
+pub enum SymbolError {
+    #[error("{}", make_error_message("invalid symbol", "invalid_symbol", .span, &make_line(.span)))]
+    InvalidSymbol { name: Substr, span: Span },
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
-pub enum CompileError<'a> {
+pub enum CompileError {
     #[error("symbol error: {0}")]
-    Symbol(SymbolError<'a>),
+    Symbol(SymbolError),
     #[error("type error: {0}")]
-    Type(TypeError<'a>),
+    Type(TypeError),
 
-    #[error("{}", make_error_message("invalid extern", "invalid extern", *.span, &make_line(*.span)))]
-    InvalidExtern { name: &'a str, span: Span<'a> },
+    #[error("{}", make_error_message("invalid extern", "invalid extern", .span, &make_line(.span)))]
+    InvalidExtern { name: Substr, span: Span },
 
     #[error("{}", render_list(&.0))]
-    List(Vec<CompileError<'a>>),
+    List(Vec<CompileError>),
 }
 
-impl<'a> From<SymbolError<'a>> for CompileError<'a> {
-    fn from(inner: SymbolError<'a>) -> Self {
+impl From<SymbolError> for CompileError {
+    fn from(inner: SymbolError) -> Self {
         Self::Symbol(inner)
     }
 }
 
-impl<'a> From<TypeError<'a>> for CompileError<'a> {
-    fn from(inner: TypeError<'a>) -> Self {
+impl From<TypeError> for CompileError {
+    fn from(inner: TypeError) -> Self {
         Self::Type(inner)
     }
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
-pub enum TypeError<'a> {
-    #[error("{}", make_error_message("mismatched types", &format!("expected: {}, found: {}", .expected, .found), *.found.span(), &make_line(*.found.span())))]
-    InvalidType { expected: Type<'a>, found: Type<'a> },
+pub enum TypeError {
+    #[error("{}", make_error_message("mismatched types", &format!("expected: {}, found: {}", .expected, .found), .found.span(), &make_line(.found.span())))]
+    InvalidType { expected: Type, found: Type },
 
-    #[error("{}", make_error_message("invalid array", &format!("found multiple types: {}", render_array(.found)), *.span, &make_line(*.span)))]
-    InvalidArray {
-        found: BTreeSet<Type<'a>>,
-        span: Span<'a>,
-    },
+    #[error("{}", make_error_message("invalid array", &format!("found multiple types: {}", render_array(.found)), .span, &make_line(.span)))]
+    InvalidArray { found: BTreeSet<Type>, span: Span },
     #[error("{error_name}\n\
         {file_indicator}\n  \
         |\n  \
         | {fragment}\n  \
         | {carets} `{left}` <- `{right}`",
-        file_indicator = make_file_indicator(*.span),
-        fragment = make_line(*.span),
-        carets = make_caret(*.span),
+        file_indicator = make_file_indicator(.span),
+        fragment = make_line(.span),
+        carets = make_caret(.span),
         error_name = "infinite type"
     )]
-    InfiniteType {
-        left: Type<'a>,
-        right: Type<'a>,
-        span: Span<'a>,
-    },
+    InfiniteType { left: Type, right: Type, span: Span },
     #[error("{error_message}\n\
         {file_indicator}\n  \
         |\n  \
         | {fragment}\n  \
         | {carets} {error_message}",
-        file_indicator = make_file_indicator(*.ty.span()),
-        fragment = make_line(*.ty.span()),
-        carets = make_caret(*.ty.span()),
+        file_indicator = make_file_indicator(.ty.span()),
+        fragment = make_line(.ty.span()),
+        carets = make_caret(.ty.span()),
         error_message = "ambiguous type"
     )]
-    UninferredType { ty: Type<'a> },
+    UninferredType { ty: Type },
 }
 
 fn render_list<T: Display>(list: &[T]) -> String {
@@ -142,7 +132,7 @@ fn render_list<T: Display>(list: &[T]) -> String {
         .collect()
 }
 
-fn render_array<'a>(found: &BTreeSet<Type<'a>>) -> String {
+fn render_array(found: &BTreeSet<Type>) -> String {
     found
         .into_iter()
         .map(|ty| format!("{}", ty))

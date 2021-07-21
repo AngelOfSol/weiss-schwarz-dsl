@@ -3,6 +3,8 @@ use std::{
     iter::once,
 };
 
+use arcstr::{ArcStr, Substr};
+
 use crate::{
     executor::{
         bytecode::{ExecutableBytecode, LabeledBytecode},
@@ -14,36 +16,39 @@ use crate::{
 };
 
 #[derive(Debug, Default)]
-struct SymbolTable<'a> {
+struct SymbolTable {
     next_id: usize,
     next_anon_fn: usize,
     next_fn_salt: usize,
 
-    fn_labels: Vec<HashMap<&'a str, String>>,
+    fn_labels: Vec<HashMap<Substr, Substr>>,
 
-    fn_used_labels: HashSet<&'a str>,
+    fn_used_labels: HashSet<Substr>,
     fn_extra_code: Vec<LabeledBytecode>,
 }
 
-impl<'a> SymbolTable<'a> {
-    pub fn next_if_labels(&mut self) -> (String, String) {
+impl SymbolTable {
+    pub fn next_if_labels(&mut self) -> (Substr, Substr) {
         let idx = self.next_id;
         self.next_id += 1;
 
-        (format!("if-true-#{}", idx), format!("end-if-#{}", idx))
+        (
+            format!("if-true-#{}", idx).into(),
+            format!("end-if-#{}", idx).into(),
+        )
     }
-    pub fn next_anon_fn(&mut self) -> String {
+    pub fn next_anon_fn(&mut self) -> Substr {
         let idx = self.next_id;
         self.next_anon_fn += 1;
 
-        format!("#anon-fn#-{}", idx)
+        format!("#anon-fn#-{}", idx).into()
     }
 
-    pub fn get_label_for(&self, name: &str) -> Option<&String> {
+    pub fn get_label_for(&self, name: &str) -> Option<&Substr> {
         self.fn_labels.iter().rev().find_map(|map| map.get(name))
     }
 
-    pub fn new_scope(&mut self, names: &[&'a str]) -> Vec<(&'a str, String)> {
+    pub fn new_scope(&mut self, names: &[Substr]) -> Vec<(Substr, Substr)> {
         self.fn_labels.push(HashMap::new());
 
         names
@@ -56,14 +61,15 @@ impl<'a> SymbolTable<'a> {
                     self.next_fn_salt = self.next_fn_salt.checked_add(1).unwrap();
                     salted
                 } else {
-                    self.fn_used_labels.insert(*name);
+                    self.fn_used_labels.insert(name.clone());
                     name.to_string()
                 };
+                let label: Substr = label.into();
                 let top = self.fn_labels.last_mut().unwrap();
 
-                top.insert(name, label.clone());
+                top.insert(name.clone(), label.clone());
 
-                (*name, label)
+                (name.clone(), label)
             })
             .collect()
     }
@@ -73,7 +79,7 @@ impl<'a> SymbolTable<'a> {
     }
 }
 
-fn generate_internal<'a>(ast: TypedAst<'a>, symbols: &mut SymbolTable<'a>) -> Vec<LabeledBytecode> {
+fn generate_internal(ast: TypedAst, symbols: &mut SymbolTable) -> Vec<LabeledBytecode> {
     match ast {
         TypedAst::Eval { mut children, .. } => {
             let callee = children.remove(0);
@@ -101,11 +107,11 @@ fn generate_internal<'a>(ast: TypedAst<'a>, symbols: &mut SymbolTable<'a>) -> Ve
                 // if we have a label for the given binding in our scope, then we call that label directly
                 // otherwise we have to load the binding manually, and then call-dynamic with the label on the stack
                 TypedAst::Binding { name, .. } => {
-                    arguments.extend(if let Some(label) = symbols.get_label_for(*name) {
-                        vec![LabeledBytecode::Call(label.to_string())]
+                    arguments.extend(if let Some(label) = symbols.get_label_for(name) {
+                        vec![LabeledBytecode::Call(label.clone())]
                     } else {
                         vec![
-                            LabeledBytecode::LoadRef(name.to_string()),
+                            LabeledBytecode::LoadRef(name.clone()),
                             LabeledBytecode::CallDynamic,
                         ]
                     });
@@ -138,7 +144,7 @@ fn generate_internal<'a>(ast: TypedAst<'a>, symbols: &mut SymbolTable<'a>) -> Ve
         TypedAst::Value { value, .. } => {
             vec![LabeledBytecode::Load(value)]
         }
-        TypedAst::Binding { name, .. } => vec![LabeledBytecode::LoadRef(name.to_string())],
+        TypedAst::Binding { name, .. } => vec![LabeledBytecode::LoadRef(name)],
         TypedAst::Seq {
             sub_expressions, ..
         } => sub_expressions
@@ -173,7 +179,6 @@ fn generate_internal<'a>(ast: TypedAst<'a>, symbols: &mut SymbolTable<'a>) -> Ve
             let mut preamble = vec![];
 
             for (binding, _) in bindings {
-                let binding = binding.to_string();
                 preamble.push(LabeledBytecode::Store(binding.clone()));
                 to_unload.push(LabeledBytecode::Unload(binding));
             }
@@ -194,7 +199,7 @@ fn generate_internal<'a>(ast: TypedAst<'a>, symbols: &mut SymbolTable<'a>) -> Ve
                 .iter()
                 .filter_map(|(name, ast)| {
                     if matches!(ast, TypedAst::Fn { .. }) {
-                        Some(*name)
+                        Some(name.clone())
                     } else {
                         None
                     }
@@ -223,17 +228,17 @@ fn generate_internal<'a>(ast: TypedAst<'a>, symbols: &mut SymbolTable<'a>) -> Ve
                         // this load/store allows fns to be used first-class
                         let data = vec![
                             LabeledBytecode::LoadLabel(label.clone()),
-                            LabeledBytecode::Store(name.to_string()),
+                            LabeledBytecode::Store(name.clone()),
                         ];
 
-                        unload.push(LabeledBytecode::Unload(name.to_string()));
+                        unload.push(LabeledBytecode::Unload(name));
 
                         data
                     } else {
                         let mut data = generate_internal(ast, symbols);
-                        data.push(LabeledBytecode::Store(name.to_string()));
+                        data.push(LabeledBytecode::Store(name.clone()));
 
-                        unload.push(LabeledBytecode::Unload(name.to_string()));
+                        unload.push(LabeledBytecode::Unload(name));
 
                         data
                     }
@@ -251,7 +256,7 @@ fn generate_internal<'a>(ast: TypedAst<'a>, symbols: &mut SymbolTable<'a>) -> Ve
     }
 }
 pub fn generate(
-    ast: TypedAst<'_>,
+    ast: TypedAst,
     externs: &[ExternDeclaration],
 ) -> (
     Vec<ExecutableBytecode>,
@@ -260,15 +265,22 @@ pub fn generate(
 ) {
     let mut symbols = SymbolTable::default();
 
-    symbols.new_scope(&externs.iter().map(|decl| decl.name).collect::<Vec<_>>());
+    symbols.new_scope(
+        &externs
+            .iter()
+            .map(|decl| decl.name.clone())
+            .collect::<Vec<_>>(),
+    );
 
     let externs = externs
         .into_iter()
         .filter(|decl| decl.name != "print")
         .map(|decl| {
             vec![
-                LabeledBytecode::Load(Value::RustFn(RUST_FN.get_key_value(decl.name).unwrap().0)),
-                LabeledBytecode::Store(decl.name.to_string()),
+                LabeledBytecode::Load(Value::RustFn(
+                    RUST_FN.get_key_value(decl.name.as_str()).unwrap().0,
+                )),
+                LabeledBytecode::Store(decl.name.clone()),
             ]
         })
         .flatten();
@@ -301,15 +313,15 @@ pub fn generate(
             .map(|x| match x {
                 LabeledBytecode::Print => ExecutableBytecode::Print,
                 LabeledBytecode::Call(value) if value == "print" => ExecutableBytecode::Print,
-                LabeledBytecode::Call(value) => ExecutableBytecode::Call(value.clone()),
+                LabeledBytecode::Call(value) => ExecutableBytecode::Call(value.to_string()),
                 LabeledBytecode::Load(value) => ExecutableBytecode::Load(value.clone()),
                 LabeledBytecode::LoadLabel(label) => {
                     ExecutableBytecode::Load(Value::Label(Label {
-                        name: label.clone(),
+                        name: label.to_string(),
                         ip: label_values[label.as_str()],
                     }))
                 }
-                LabeledBytecode::Label(value) => ExecutableBytecode::Label(value.clone()),
+                LabeledBytecode::Label(value) => ExecutableBytecode::Label(value.to_string()),
                 LabeledBytecode::Jump(label) => {
                     ExecutableBytecode::Jump(label_values[label.as_str()])
                 }
@@ -317,9 +329,11 @@ pub fn generate(
                     ExecutableBytecode::JumpIf(label_values[label.as_str()])
                 }
                 LabeledBytecode::Return => ExecutableBytecode::Return,
-                LabeledBytecode::Store(binding) => ExecutableBytecode::Store(binding.clone()),
-                LabeledBytecode::LoadRef(binding) => ExecutableBytecode::LoadRef(binding.clone()),
-                LabeledBytecode::Unload(binding) => ExecutableBytecode::Unload(binding.clone()),
+                LabeledBytecode::Store(binding) => ExecutableBytecode::Store(binding.to_string()),
+                LabeledBytecode::LoadRef(binding) => {
+                    ExecutableBytecode::LoadRef(binding.to_string())
+                }
+                LabeledBytecode::Unload(binding) => ExecutableBytecode::Unload(binding.to_string()),
                 LabeledBytecode::CallDynamic => ExecutableBytecode::CallDynamic,
             })
             .collect(),
