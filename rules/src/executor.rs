@@ -15,34 +15,36 @@ use maplit::hashmap;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fmt::Display};
 
-#[derive()]
+#[derive(Default)]
 pub struct Executor {
-    pub stack: ExecutorStack,
-    pub heap: ExecutorHeap,
-    pub bytecode: Vec<ExecutableBytecode>,
+    pub stack: Stack,
+    pub heap: Heap,
     pub ip: usize,
     pub ip_stack: Vec<usize>,
     pub labels: HashMap<String, usize>,
 }
 
 #[derive(Default, Debug)]
-pub struct ExecutorStack {
+pub struct Stack {
     stack: Vec<Value>,
 }
 
 #[derive(Default, Debug)]
-pub struct ExecutorHeap {
+pub struct Heap {
     heap: HashMap<String, Vec<Value>>,
 }
 
 impl Executor {
-    pub fn advance(&mut self, game: &mut Game) -> Result<String, RuntimeError> {
-        let code = self
-            .bytecode
+    pub fn advance(
+        &mut self,
+        bytecode: &[ExecutableBytecode],
+        game: &mut Game,
+    ) -> Result<Option<String>, RuntimeError> {
+        let code = bytecode
             .get(self.ip)
             .ok_or(RuntimeError::InvalidBytecodeOffset)?;
 
-        let mut ret = String::new();
+        let mut ret = None;
 
         let advance_intruction_pointer = match code {
             ExecutableBytecode::Print => {
@@ -52,17 +54,17 @@ impl Executor {
                         self.stack.push(len);
 
                         let arr = self.stack.pop_any_array()?;
-                        ret = format!(
+                        ret = Some(format!(
                             "{}",
                             arr.iter()
                                 .map(ToString::to_string)
                                 .collect::<Vec<_>>()
                                 .join(" ")
-                        );
+                        ));
                         self.stack.push_any_array(arr);
                     }
                     value => {
-                        ret = format!("{}", &value);
+                        ret = Some(format!("{}", &value));
                         self.stack.push_any(value);
                     }
                 }
@@ -148,11 +150,11 @@ impl Executor {
             self.ip += 1;
         }
 
-        Err(RuntimeError::Unfinished(ret))
+        Ok(ret)
     }
 }
 
-impl ExecutorHeap {
+impl Heap {
     pub fn store(&mut self, key: String, value: Value) {
         let data = self.heap.entry(key).or_default();
         data.push(value);
@@ -174,7 +176,7 @@ impl ExecutorHeap {
     }
 }
 
-impl ExecutorStack {
+impl Stack {
     pub fn push<V: Into<Value>>(&mut self, value: V) {
         self.stack.push(value.into());
     }

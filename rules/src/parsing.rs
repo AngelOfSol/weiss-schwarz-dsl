@@ -548,10 +548,10 @@ pub fn parse_extern(input: Span) -> IResult<Span, ExternDeclaration> {
     map(
         consumed(delimited(
             lexing::open,
-            preceded(
+            cut(preceded(
                 ws(tag("extern")),
                 pair(lexing::identifier, parse_type_scheme),
-            ),
+            )),
             lexing::close,
         )),
         |(span, (name, type_scheme))| ExternDeclaration {
@@ -573,7 +573,10 @@ pub fn parse_fn_definition(input: Span) -> IResult<Span, FunctionDefinition> {
     map(
         consumed(delimited(
             lexing::open,
-            preceded(ws(tag("define")), pair(lexing::identifier, ws(parse_fn))),
+            cut(preceded(
+                ws(tag("define")),
+                pair(lexing::identifier, ws(parse_fn)),
+            )),
             lexing::close,
         )),
         |(span, (name, eval))| FunctionDefinition { name, eval, span },
@@ -584,7 +587,7 @@ pub fn parse_include(input: Span) -> IResult<Span, Include> {
     map(
         delimited(
             lexing::open,
-            preceded(ws(tag("include")), lexing::raw_string),
+            cut(preceded(ws(tag("include")), lexing::raw_string)),
             lexing::close,
         ),
         |path| Include { path },

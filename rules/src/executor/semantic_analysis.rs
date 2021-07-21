@@ -2,7 +2,7 @@ pub(crate) mod constraints;
 pub(crate) mod hm;
 mod symbol_validity;
 
-use std::collections::HashSet;
+use std::{collections::HashSet, iter::once};
 
 use crate::{
     executor::{
@@ -15,8 +15,9 @@ use crate::{
             },
             symbol_validity::check_symbol_validity,
         },
+        RUST_FN,
     },
-    parsing::{parse_type_scheme, ExternDeclaration, FunctionDefinition, Sexpr, Span},
+    parsing::{ExternDeclaration, FunctionDefinition, Sexpr},
 };
 
 pub type SymbolTable<'a> = HashSet<&'a str>;
@@ -39,17 +40,33 @@ pub fn semantic_analysis<'a>(
         env.map.insert(decl.name, decl.type_scheme.clone());
     }
 
-    env.map.insert(
-        "if",
-        parse_type_scheme(Span::new_extra("fn(bool, T, T) -> T", "<internal>"))
-            .unwrap()
-            .1,
-    );
+    let mut extern_errors = externs
+        .iter()
+        .filter_map(|decl| {
+            if RUST_FN.contains_key(decl.name) || decl.name == "print" {
+                None
+            } else {
+                Some(CompileError::InvalidExtern {
+                    name: decl.name,
+                    span: decl.span,
+                })
+            }
+        })
+        .peekable();
 
-    for def in definitions {
-        check_symbol_validity(&def.eval, symbol_table.clone())?;
+    let mut symbol_errors = definitions
+        .iter()
+        .map(|decl| &decl.eval)
+        .chain(once(ast))
+        .filter_map(|expr| check_symbol_validity(expr, symbol_table.clone()).err())
+        .map(CompileError::from)
+        .peekable();
+
+    if symbol_errors.peek().is_some() {
+        return Err(CompileError::List(
+            symbol_errors.chain(extern_errors).collect(),
+        ));
     }
-    check_symbol_validity(ast, symbol_table)?;
 
     let data = build_type_tree(ast.clone(), &mut fresh);
 
@@ -68,11 +85,12 @@ pub fn semantic_analysis<'a>(
 
     let (program_substitutions, unification_errors) = unify(unifiers);
 
-    if !unification_errors.is_empty() {
+    if !unification_errors.is_empty() || extern_errors.peek().is_some() {
         return Err(CompileError::List(
             unification_errors
                 .into_iter()
                 .map(CompileError::from)
+                .chain(extern_errors)
                 .collect(),
         ));
     }

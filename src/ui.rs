@@ -1,11 +1,15 @@
 use std::{collections::HashMap, fs::write};
 
-use egui::{Color32, Label, ScrollArea, TextEdit, Ui, Vec2};
+use egui::{
+    menu::{bar, menu},
+    Color32, Label, Response, ScrollArea, TextEdit, Ui, Vec2,
+};
 use rules::{
     executor::{
+        bytecode::LabeledBytecode,
         code_generation::generate,
         error::{make_error_message, RuntimeError},
-        semantic_analysis, Executor, ExecutorHeap, ExecutorStack,
+        semantic_analysis, Executor, Heap, Stack,
     },
     model::{Card, CardId, Game, ZoneId},
     parsing::{parse_included_file, parse_program, Span},
@@ -20,11 +24,89 @@ pub struct DebugUi {
     pub console_input: String,
     pub generated_code: String,
     pub game: Game,
+    pub view: View,
 }
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum View {
+    Legacy,
+    GameState,
+    Editor,
+}
+impl Default for View {
+    fn default() -> Self {
+        Self::GameState
+    }
+}
+
 impl DebugUi {
     pub fn update(&mut self, ctx: &egui::CtxRef, _frame: &mut epi::Frame<'_>) {
-        egui::TopBottomPanel::bottom("console").show(ctx, |ui| {
+        egui::TopBottomPanel::top("menu bar").show(ctx, |ui| {
+            bar(ui, |ui| {
+                menu(ui, "View", |ui| {
+                    ui.radio_value(&mut self.view, View::Legacy, "Legacy");
+                    ui.radio_value(&mut self.view, View::GameState, "Game State");
+                    ui.radio_value(&mut self.view, View::Editor, "Editor");
+                });
+            });
+        });
+
+        egui::CentralPanel::default().show(ctx, |ui| match self.view {
+            View::Legacy => self.legacy(ui),
+            View::GameState => self.game_state(ui),
+            View::Editor => self.code_editor(ui),
+        });
+    }
+    fn code_editor(&mut self, ui: &mut Ui) {
+        if ui
+            .add(
+                TextEdit::multiline(&mut self.console_input)
+                    .hint_text("enter code here")
+                    .code_editor(),
+            )
+            .changed()
+        {
+            self.console_input = self.console_input.replace("\t", "  ");
+            write("./saved.w", &bincode::serialize(self).unwrap()).unwrap();
+        };
+    }
+
+    fn game_state(&mut self, ui: &mut Ui) {
+        ui.vertical_centered(|ui| {
+            ui.heading("Game");
+            ui.separator();
+            ui.label(format!("turn_number: {}", self.game.turn));
+            ui.label(format!("active_player: {}", self.game.active_player));
+        });
+        ui.columns(2, |columns| {
+            for (idx, (ui, player)) in columns.iter_mut().zip(self.game.players.iter()).enumerate()
+            {
+                ui.heading(format!("Player {}", idx + 1));
+                ui.separator();
+                ui.indent(ui.id().with(idx), |ui| {
+                    ui.label(format!("refresh_point: {}", player.refresh_point));
+                    ui.separator();
+                    for zone in ZoneId::iter() {
+                        egui::CollapsingHeader::new(format!("{}", zone)).show(ui, |ui| {
+                            for (id, card) in player.zones[&zone]
+                                .iter()
+                                .map(|item| (*item, &player.cards[item]))
+                            {
+                                card_display(ui, id, card);
+                            }
+                        });
+                    }
+                });
+            }
+        });
+    }
+
+    fn legacy(&mut self, ui: &mut Ui) {
+        ui.vertical_centered(|ui| {
             ui.columns(3, |columns| {
+                for c in columns.iter_mut() {
+                    c.set_height(200.0);
+                }
                 columns[0].vertical(|ui| {
                     let id = ui.make_persistent_id("scroll");
                     ui.memory().id_data.get_or_insert_with(id, || true);
@@ -96,9 +178,8 @@ impl DebugUi {
                                 }
 
                                 let mut executor = Executor {
-                                    stack: ExecutorStack::default(),
-                                    heap: ExecutorHeap::default(),
-                                    bytecode: vec![],
+                                    stack: Stack::default(),
+                                    heap: Heap::default(),
                                     ip: 0,
                                     ip_stack: vec![],
                                     labels: HashMap::new(),
@@ -107,34 +188,30 @@ impl DebugUi {
                                     .map_err(|err| err.to_string())?;
                                 let (for_exec, for_display, labels) = generate(value, &externs);
                                 executor.labels = labels;
-                                executor.bytecode = for_exec;
 
                                 self.generated_code = for_display
                                     .iter()
                                     .map(|instruction| {
-                                        //
-                                        let ret = instruction.to_string();
-                                        if !ret.starts_with('\'') {
-                                            format!("\t{}", ret)
+                                        if matches!(instruction, LabeledBytecode::Label(..)) {
+                                            format!("\t{}", instruction)
                                         } else {
-                                            ret
+                                            instruction.to_string()
                                         }
                                     })
-                                    .collect::<Vec<_>>()
-                                    .join("\n");
+                                    .intersperse("\n".to_string())
+                                    .collect();
 
                                 let mut values = Vec::new();
                                 loop {
-                                    match executor.advance(&mut self.game) {
-                                        Err(RuntimeError::Unfinished(extra)) => {
-                                            if extra.chars().any(|c| !c.is_whitespace()) {
-                                                values.push(extra);
-                                            }
+                                    match executor.advance(&for_exec, &mut self.game) {
+                                        Ok(Some(inner)) => {
+                                            values.push(inner);
                                         }
+                                        Ok(None) => (),
                                         Err(RuntimeError::NoInstructionPointer) => {
                                             break Ok(values.join("\n"))
                                         }
-                                        rest => break rest,
+                                        Err(rest) => break Err(rest),
                                     }
                                 }
                                 .map_err(|err| err.to_string())
@@ -191,40 +268,6 @@ impl DebugUi {
                             });
                     });
                 });
-            });
-        });
-
-        egui::TopBottomPanel::top("game_state").show(ctx, |ui| {
-            ui.vertical_centered(|ui| {
-                ui.heading("Game");
-                ui.separator();
-                ui.label(format!("turn_number: {}", self.game.turn));
-                ui.label(format!("active_player: {}", self.game.active_player));
-            });
-        });
-
-        egui::CentralPanel::default().show(ctx, |ui| {
-            ui.columns(2, |columns| {
-                for (idx, (ui, player)) in
-                    columns.iter_mut().zip(self.game.players.iter()).enumerate()
-                {
-                    ui.heading(format!("Player {}", idx + 1));
-                    ui.separator();
-                    ui.indent(ui.id().with(idx), |ui| {
-                        ui.label(format!("refresh_point: {}", player.refresh_point));
-                        ui.separator();
-                        for zone in ZoneId::iter() {
-                            egui::CollapsingHeader::new(format!("{}", zone)).show(ui, |ui| {
-                                for (id, card) in player.zones[&zone]
-                                    .iter()
-                                    .map(|item| (*item, &player.cards[item]))
-                                {
-                                    card_display(ui, id, card);
-                                }
-                            });
-                        }
-                    });
-                }
             });
         });
     }
