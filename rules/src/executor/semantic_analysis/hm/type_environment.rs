@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{HashMap, HashSet};
 
 use arcstr::Substr;
 
@@ -10,11 +10,11 @@ use crate::executor::semantic_analysis::hm::{
 
 #[derive(Default, Debug, Clone)]
 pub(crate) struct TypeEnvironment {
-    pub(crate) map: BTreeMap<Substr, TypeScheme>,
+    pub(crate) map: HashMap<Substr, TypeScheme>,
 }
 
 impl TypeEnvironment {
-    pub(crate) fn free_variables(&self) -> BTreeSet<TypeVariable> {
+    pub(crate) fn free_variables(&self) -> HashSet<TypeVariable> {
         self.map
             .values()
             .flat_map(|scheme| scheme.free_variables())

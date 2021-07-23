@@ -148,12 +148,15 @@ fn main() {
             },
             ..DebugUi::default()
         });
+    demo_app.compile();
 
     let start_time = Instant::now();
     let mut previous_frame_time = None;
     event_loop.run(move |event, _, control_flow| {
         // Pass the winit events to the platform integration.
         platform.handle_event(&event);
+
+        demo_app.on_frame();
 
         match event {
             RedrawRequested(..) => {

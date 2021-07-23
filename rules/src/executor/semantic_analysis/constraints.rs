@@ -1,4 +1,4 @@
-use std::{collections::BTreeSet, iter::once};
+use std::iter::once;
 
 use crate::executor::{
     error::TypeError,
@@ -26,9 +26,15 @@ impl Constraint {
 pub(crate) fn unify(mut constraints: Vec<Constraint>) -> (Substitution, Vec<TypeError>) {
     let mut errors = vec![];
     let mut ret = Substitution::default();
+
     while let Some(constraint) = constraints.pop() {
         let expected = constraint.expected;
         let found = constraint.found;
+
+        if &expected == &found {
+            continue;
+        }
+
         let new_sub = match (&expected, &found) {
             (
                 Type::Constant {
@@ -133,22 +139,22 @@ pub(crate) fn infer(
                     name.clone(),
                     TypeScheme {
                         ty: fresh_type_variable,
-                        quantified_variables: BTreeSet::new(),
+                        quantified_variables: Default::default(),
                     },
                 );
             }
 
             for (name, value) in bindings {
-                let value = infer(unifiers, &mut type_environment, fresh, value);
+                let mut new_unifiers = vec![];
+                let value = infer(&mut new_unifiers, &type_environment, fresh, value);
 
                 // we can ignore the errors here, becuase the top level unification will find them
-                let (subs, _) = unify(unifiers.clone());
+                let (subs, _) = unify(new_unifiers.clone());
+
+                unifiers.extend(new_unifiers);
 
                 // we apply the substitutions from the inference here
                 type_environment.apply(&subs);
-
-                // and we apply the subs here afterward to have proper type variables
-                let value = value.apply(&subs);
 
                 // so that when we generalize here,
                 // the quantified vs free variables are correct
@@ -213,7 +219,7 @@ pub(crate) fn infer(
                         binding.clone(),
                         TypeScheme {
                             ty: fresh_type_variable.clone(),
-                            quantified_variables: BTreeSet::new(),
+                            quantified_variables: Default::default(),
                         },
                     );
 

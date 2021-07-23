@@ -76,3 +76,37 @@ pub fn eq(executor: &mut Executor, _: &mut Game) -> Result<(), RuntimeError> {
 
     Ok(())
 }
+
+pub fn head(executor: &mut Executor, _: &mut Game) -> Result<(), RuntimeError> {
+    let mut array = executor.stack.pop::<Vec<_>>()?;
+    if array.is_empty() {
+        Err(RuntimeError::EmptyArray)
+    } else {
+        executor.stack.push(array.remove(0));
+        Ok(())
+    }
+}
+
+pub fn tail(executor: &mut Executor, _: &mut Game) -> Result<(), RuntimeError> {
+    let mut array = executor.stack.pop::<Vec<_>>()?;
+    if !array.is_empty() {
+        array.remove(0);
+    }
+    executor.stack.push(array);
+    Ok(())
+}
+
+pub fn cons(executor: &mut Executor, _: &mut Game) -> Result<(), RuntimeError> {
+    let value = executor.stack.pop_any()?;
+    let mut array = executor.stack.pop::<Vec<_>>()?;
+    array.insert(0, value);
+    executor.stack.push(array);
+
+    Ok(())
+}
+pub fn is_empty(executor: &mut Executor, _: &mut Game) -> Result<(), RuntimeError> {
+    let array = executor.stack.pop::<Vec<_>>()?;
+    executor.stack.push(array.is_empty());
+
+    Ok(())
+}

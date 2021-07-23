@@ -4,7 +4,7 @@ use std::{
     str::FromStr,
 };
 
-use arcstr::{ArcStr, Substr};
+use arcstr::Substr;
 use nom::{
     AsBytes, Compare, ExtendInto, FindSubstring, FindToken, InputIter, InputLength, InputTake,
     InputTakeAtPosition, Needed, Offset, ParseTo, Slice,
@@ -12,30 +12,6 @@ use nom::{
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Input(pub Substr);
-
-impl Input {
-    pub fn substr<R: RangeBounds<usize>>(&self, range: R) -> Self {
-        let start = match range.start_bound() {
-            std::ops::Bound::Included(x) => *x,
-            std::ops::Bound::Excluded(x) => *x + 1,
-            std::ops::Bound::Unbounded => 0,
-        };
-        let end = match range.end_bound() {
-            std::ops::Bound::Included(x) => *x + 1,
-            std::ops::Bound::Excluded(x) => *x,
-            std::ops::Bound::Unbounded => self.0.len(),
-        };
-
-        // in the case of an empty substr, we want to create a blank reference
-        // to a new str, with the empty range
-        if start == end && start <= self.0.len() {
-            let idx = self.0.range().start + start;
-            Input(unsafe { Substr::from_parts_unchecked(self.0.parent().clone(), idx..idx) })
-        } else {
-            Input(self.0.substr(range))
-        }
-    }
-}
 
 impl Display for Input {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -172,11 +148,11 @@ impl InputLength for Input {
 
 impl InputTake for Input {
     fn take(&self, count: usize) -> Self {
-        self.substr(..count)
+        Input(self.substr(..count))
     }
 
     fn take_split(&self, count: usize) -> (Self, Self) {
-        (self.substr(count..), self.substr(..count))
+        (Input(self.substr(count..)), Input(self.substr(..count)))
     }
 }
 
@@ -263,7 +239,7 @@ where
     T: RangeBounds<usize> + Debug,
 {
     fn slice(&self, range: T) -> Self {
-        self.substr(range)
+        Input(self.substr(range))
     }
 }
 

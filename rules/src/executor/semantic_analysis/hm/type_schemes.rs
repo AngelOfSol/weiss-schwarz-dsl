@@ -1,34 +1,37 @@
-use std::{collections::BTreeSet, fmt::Display};
-
 use crate::executor::semantic_analysis::hm::{
     substitution::Substitution,
     types::{Type, TypeVariable},
     Fresh,
 };
+use std::{collections::HashSet, fmt::Display};
 
 #[derive(Clone, Debug)]
-pub(crate) struct TypeScheme {
+pub struct TypeScheme {
     pub ty: Type,
-    pub quantified_variables: BTreeSet<TypeVariable>,
+    pub quantified_variables: HashSet<TypeVariable>,
 }
 
 impl Display for TypeScheme {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "<{}>{}",
-            self.quantified_variables
-                .iter()
-                .map(|inner| format!("{}", inner))
-                .intersperse(format!(", "))
-                .collect::<String>(),
-            self.ty
-        )
+        if self.quantified_variables.is_empty() {
+            self.ty.fmt(f)
+        } else {
+            write!(
+                f,
+                "<{}>{}",
+                self.quantified_variables
+                    .iter()
+                    .map(|inner| format!("{}", inner))
+                    .intersperse(format!(", "))
+                    .collect::<String>(),
+                self.ty
+            )
+        }
     }
 }
 
 impl TypeScheme {
-    pub(crate) fn free_variables(&self) -> BTreeSet<TypeVariable> {
+    pub(crate) fn free_variables(&self) -> HashSet<TypeVariable> {
         self.ty
             .free_variables()
             .difference(&self.quantified_variables)

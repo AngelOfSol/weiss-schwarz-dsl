@@ -1,7 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    iter::once,
-};
+use std::collections::{HashMap, HashSet};
 
 use arcstr::Substr;
 
@@ -10,7 +7,6 @@ use crate::{
         bytecode::{ExecutableBytecode, LabeledBytecode},
         semantic_analysis::hm::TypedAst,
         value::{Label, Value},
-        RUST_FN,
     },
     parsing::ExternDeclaration,
 };
@@ -33,12 +29,12 @@ impl SymbolTable {
         self.next_id += 1;
 
         (
-            format!("if-true-#{}", idx).into(),
-            format!("end-if-#{}", idx).into(),
+            format!("then-#{}", idx).into(),
+            format!("finally-#{}", idx).into(),
         )
     }
     pub fn next_anon_fn(&mut self) -> Substr {
-        let idx = self.next_id;
+        let idx = self.next_anon_fn;
         self.next_anon_fn += 1;
 
         format!("#anon-fn#-{}", idx).into()
@@ -79,7 +75,11 @@ impl SymbolTable {
     }
 }
 
-fn generate_internal(ast: TypedAst, symbols: &mut SymbolTable) -> Vec<LabeledBytecode> {
+fn generate_internal(
+    ast: TypedAst,
+    symbols: &mut SymbolTable,
+    fn_name: Option<Substr>,
+) -> Vec<LabeledBytecode> {
     match ast {
         TypedAst::Eval { mut children, .. } => {
             let callee = children.remove(0);
@@ -87,7 +87,7 @@ fn generate_internal(ast: TypedAst, symbols: &mut SymbolTable) -> Vec<LabeledByt
             let mut arguments = children
                 .into_iter()
                 .rev()
-                .map(|arg| generate_internal(arg, symbols))
+                .map(|arg| generate_internal(arg, symbols, None))
                 .flatten()
                 .collect::<Vec<_>>();
 
@@ -95,10 +95,7 @@ fn generate_internal(ast: TypedAst, symbols: &mut SymbolTable) -> Vec<LabeledByt
                 // this means we're calling a fn directly, so we generate the code and assign it to an anonymous function
                 TypedAst::Fn { .. } => {
                     let label = symbols.next_anon_fn();
-                    let mut callee_code = generate_internal(callee, symbols);
-                    callee_code.insert(0, LabeledBytecode::Label(label.clone()));
-
-                    symbols.fn_extra_code.extend(callee_code);
+                    generate_internal(callee, symbols, Some(label.clone()));
 
                     arguments.push(LabeledBytecode::Call(label));
 
@@ -124,7 +121,7 @@ fn generate_internal(ast: TypedAst, symbols: &mut SymbolTable) -> Vec<LabeledByt
                 // the resulting code should evaluate to a Value::Label(..) so we just run that code
                 // and then emit a call-dynamic
                 _ => {
-                    arguments.extend(generate_internal(callee, symbols));
+                    arguments.extend(generate_internal(callee, symbols, None));
                     arguments.push(LabeledBytecode::CallDynamic);
 
                     arguments
@@ -135,9 +132,12 @@ fn generate_internal(ast: TypedAst, symbols: &mut SymbolTable) -> Vec<LabeledByt
             let len = values.len();
             values
                 .into_iter()
-                .map(|inner| generate_internal(inner, symbols))
+                .map(|inner| generate_internal(inner, symbols, None))
                 .flatten()
-                .chain(once(LabeledBytecode::Load(Value::ArrayLength(len))))
+                .chain(vec![
+                    LabeledBytecode::Load((len as i32).into()),
+                    LabeledBytecode::MakeArray,
+                ])
                 .collect::<Vec<_>>()
         }
 
@@ -149,7 +149,9 @@ fn generate_internal(ast: TypedAst, symbols: &mut SymbolTable) -> Vec<LabeledByt
             sub_expressions, ..
         } => sub_expressions
             .into_iter()
-            .flat_map(|expr| generate_internal(expr, symbols))
+            .map(|expr| generate_internal(expr, symbols, None))
+            .intersperse(vec![LabeledBytecode::Unload])
+            .flatten()
             .collect(),
 
         TypedAst::If {
@@ -159,12 +161,12 @@ fn generate_internal(ast: TypedAst, symbols: &mut SymbolTable) -> Vec<LabeledByt
             ..
         } => {
             let (true_label, end_label) = symbols.next_if_labels();
-            let mut condition = generate_internal(*condition, symbols);
+            let mut condition = generate_internal(*condition, symbols, None);
             condition.push(LabeledBytecode::JumpIf(true_label.clone()));
-            let mut if_false = generate_internal(*if_false, symbols);
+            let mut if_false = generate_internal(*if_false, symbols, None);
             if_false.push(LabeledBytecode::Jump(end_label.clone()));
             if_false.push(LabeledBytecode::Label(true_label));
-            let mut if_true = generate_internal(*if_true, symbols);
+            let mut if_true = generate_internal(*if_true, symbols, None);
             // need to add "symbol table" etc so it can generate fresh labels
             if_true.push(LabeledBytecode::Label(end_label));
             vec![condition, if_false, if_true]
@@ -176,20 +178,25 @@ fn generate_internal(ast: TypedAst, symbols: &mut SymbolTable) -> Vec<LabeledByt
         // the parent node will take care of properly labeling
         TypedAst::Fn { bindings, expr, .. } => {
             let mut to_unload = vec![];
-            let mut preamble = vec![];
+
+            let label = fn_name.unwrap_or_else(|| symbols.next_anon_fn());
+
+            let mut preamble = vec![LabeledBytecode::Label(label.clone())];
 
             for (binding, _) in bindings {
                 preamble.push(LabeledBytecode::Store(binding.clone()));
-                to_unload.push(LabeledBytecode::Unload(binding));
+                to_unload.push(LabeledBytecode::UnloadRef(binding));
             }
 
-            preamble.extend(generate_internal(*expr, symbols));
+            preamble.extend(generate_internal(*expr, symbols, None));
 
             preamble.extend(to_unload);
 
             preamble.extend(vec![LabeledBytecode::Return]);
 
-            preamble
+            symbols.fn_extra_code.extend(preamble);
+
+            vec![LabeledBytecode::LoadLabel(label)]
         }
         TypedAst::Let { bindings, expr, .. } => {
             // if we're binding to a fn, we create labels based on the binding
@@ -220,25 +227,19 @@ fn generate_internal(ast: TypedAst, symbols: &mut SymbolTable) -> Vec<LabeledByt
                             .find(|(original_binding, _)| original_binding == &name)
                             .unwrap();
 
-                        let mut callee_code = generate_internal(ast, symbols);
-                        callee_code.insert(0, LabeledBytecode::Label(label.clone()));
-
-                        symbols.fn_extra_code.extend(callee_code);
+                        let mut data = generate_internal(ast, symbols, Some(label.clone()));
 
                         // this load/store allows fns to be used first-class
-                        let data = vec![
-                            LabeledBytecode::LoadLabel(label.clone()),
-                            LabeledBytecode::Store(name.clone()),
-                        ];
+                        data.push(LabeledBytecode::Store(name.clone()));
 
-                        unload.push(LabeledBytecode::Unload(name));
+                        unload.push(LabeledBytecode::UnloadRef(name));
 
                         data
                     } else {
-                        let mut data = generate_internal(ast, symbols);
+                        let mut data = generate_internal(ast, symbols, None);
                         data.push(LabeledBytecode::Store(name.clone()));
 
-                        unload.push(LabeledBytecode::Unload(name));
+                        unload.push(LabeledBytecode::UnloadRef(name));
 
                         data
                     }
@@ -246,7 +247,7 @@ fn generate_internal(ast: TypedAst, symbols: &mut SymbolTable) -> Vec<LabeledByt
                 .flatten()
                 .collect::<Vec<_>>();
 
-            preamble.extend(generate_internal(*expr, symbols));
+            preamble.extend(generate_internal(*expr, symbols, None));
             preamble.extend(unload);
 
             symbols.pop_scope();
@@ -255,14 +256,14 @@ fn generate_internal(ast: TypedAst, symbols: &mut SymbolTable) -> Vec<LabeledByt
         }
     }
 }
-pub fn generate(
-    ast: TypedAst,
-    externs: &[ExternDeclaration],
-) -> (
-    Vec<ExecutableBytecode>,
-    Vec<LabeledBytecode>,
-    HashMap<String, usize>,
-) {
+
+pub struct Generated {
+    pub executable: Vec<ExecutableBytecode>,
+    pub labeled: Vec<LabeledBytecode>,
+    pub labels: HashMap<String, usize>,
+}
+
+pub fn generate(ast: TypedAst, externs: &[ExternDeclaration]) -> Generated {
     let mut symbols = SymbolTable::default();
 
     symbols.new_scope(
@@ -272,24 +273,11 @@ pub fn generate(
             .collect::<Vec<_>>(),
     );
 
-    let externs = externs
+    let internal = generate_internal(ast, &mut symbols, None);
+
+    let internal = internal
         .into_iter()
-        .filter(|decl| decl.name != "print")
-        .map(|decl| {
-            vec![
-                LabeledBytecode::Load(Value::RustFn(
-                    RUST_FN.get_key_value(decl.name.as_str()).unwrap().0,
-                )),
-                LabeledBytecode::Store(decl.name.clone()),
-            ]
-        })
-        .flatten();
-
-    let internal = generate_internal(ast, &mut symbols);
-
-    let internal = externs
-        .chain(internal)
-        .chain(once(LabeledBytecode::Return))
+        .chain(vec![LabeledBytecode::Unload, LabeledBytecode::Return])
         .collect::<Vec<_>>()
         .into_iter()
         .chain(symbols.fn_extra_code)
@@ -307,8 +295,8 @@ pub fn generate(
         })
         .collect::<HashMap<_, _>>();
 
-    (
-        internal
+    Generated {
+        executable: internal
             .iter()
             .map(|x| match x {
                 LabeledBytecode::Print => ExecutableBytecode::Print,
@@ -333,11 +321,15 @@ pub fn generate(
                 LabeledBytecode::LoadRef(binding) => {
                     ExecutableBytecode::LoadRef(binding.to_string())
                 }
-                LabeledBytecode::Unload(binding) => ExecutableBytecode::Unload(binding.to_string()),
+                LabeledBytecode::UnloadRef(binding) => {
+                    ExecutableBytecode::UnloadRef(binding.to_string())
+                }
                 LabeledBytecode::CallDynamic => ExecutableBytecode::CallDynamic,
+                LabeledBytecode::Unload => ExecutableBytecode::Unload,
+                LabeledBytecode::MakeArray => ExecutableBytecode::MakeArray,
             })
             .collect(),
-        internal,
-        label_values,
-    )
+        labeled: internal,
+        labels: label_values,
+    }
 }

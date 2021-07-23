@@ -44,6 +44,7 @@ pub fn check_symbol_validity(ast: &Sexpr, mut symbols: SymbolTable) -> Result<()
             check_symbol_validity(eval, symbols)
         }
         Sexpr::Let { bindings, expr, .. } => {
+            symbols.extend(bindings.iter().map(|(binding, _)| binding).cloned());
             for (_, binding_expr) in bindings.iter() {
                 check_symbol_validity(binding_expr, symbols.clone())?;
             }

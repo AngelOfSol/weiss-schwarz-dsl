@@ -50,9 +50,9 @@ dependencies = [
 
 [[package]]
 name = "arcstr"
-version = "1.0.0"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "514f4b246c9aa8f35393407c55f20df89cae359831c136cd4e61c97cd1dd5dfa"
+checksum = "c3282d7e05e547d1cd54c83557021478ebedcbdbe1a5ad941d1a81182a97f5f6"
 
 [[package]]
 name = "arrayvec"
@@ -1219,6 +1219,7 @@ dependencies = [
 [[package]]
 name = "nom_locate"
 version = "3.0.2"
+source = "git+https://github.com/fflorent/nom_locate.git#60cf136fca91bd92f83aae96d8d05275a412b921"
 dependencies = [
  "bytecount",
  "memchr",
@@ -2059,6 +2060,7 @@ dependencies = [
 name = "ws_engine_dynamic_language"
 version = "0.1.0"
 dependencies = [
+ "arcstr",
  "bincode",
  "chrono",
  "egui",

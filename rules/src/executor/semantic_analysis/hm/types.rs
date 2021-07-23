@@ -1,7 +1,7 @@
 use crate::{executor::semantic_analysis::hm::substitution::Substitution, parsing::Span};
 use derivative::Derivative;
 use std::{
-    collections::{BTreeSet, HashMap},
+    collections::{HashMap, HashSet},
     fmt::Display,
     iter::FromIterator,
 };
@@ -147,13 +147,13 @@ impl Type {
             None
         }
     }
-    pub fn free_variables(&self) -> BTreeSet<TypeVariable> {
+    pub fn free_variables(&self) -> HashSet<TypeVariable> {
         match self {
             Type::Constant { parameters, .. } => parameters
                 .iter()
                 .flat_map(|item| item.free_variables())
                 .collect(),
-            Type::Var(idx, ..) => maplit::btreeset! { *idx },
+            Type::Var(idx, ..) => maplit::hashset! { *idx },
         }
     }
     pub fn span(&self) -> &Span {

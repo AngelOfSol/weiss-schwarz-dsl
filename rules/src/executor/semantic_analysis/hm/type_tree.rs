@@ -147,7 +147,7 @@ impl Display for TypedAst {
 }
 
 impl TypedAst {
-    pub(crate) fn span(&self) -> &Span {
+    pub fn span(&self) -> &Span {
         match self {
             TypedAst::Eval { span, .. }
             | TypedAst::Let { span, .. }
@@ -161,7 +161,7 @@ impl TypedAst {
     }
 
     #[allow(dead_code)]
-    pub(crate) fn ty(&self) -> &Type {
+    pub fn ty(&self) -> &Type {
         match self {
             TypedAst::Eval { ty, .. }
             | TypedAst::Let { ty, .. }

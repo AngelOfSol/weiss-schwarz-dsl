@@ -3,7 +3,7 @@ pub mod lexing;
 
 use std::{cell::RefCell, collections::HashMap, fmt::Display};
 
-use arcstr::{ArcStr, Substr};
+use arcstr::Substr;
 use nom::{
     branch::alt,
     bytes::complete::tag,
@@ -29,15 +29,17 @@ pub use nom::{
 
 pub type SpanContent = Input;
 
-pub type Span = LocatedSpan<SpanContent, ArcStr>;
+pub type ParseError = nom::error::VerboseError<Span>;
 
-pub type IResult<I, O, E = VerboseError<I>> = NomResult<I, O, E>;
+pub type Span = LocatedSpan<SpanContent, Substr>;
 
-pub fn input(data: String, file_name: String) -> Span {
-    Span::new_extra(
-        Input(Substr::full(ArcStr::from(data))),
-        ArcStr::from(file_name),
-    )
+pub type IResult<I, O, E = ParseError> = NomResult<I, O, E>;
+
+pub fn make_span<S1, S2>(data: S1, file_name: S2) -> Span
+where
+    Substr: From<S1> + From<S2>,
+{
+    Span::new_extra(Input(Substr::from(data)), Substr::from(file_name))
 }
 
 pub fn parse_sexpr(input: Span) -> IResult<Span, Sexpr> {
@@ -68,7 +70,7 @@ pub fn parse_array(input: Span) -> IResult<Span, Sexpr> {
     map(
         consumed(delimited(
             lexing::open_array,
-            cut(many1(parse_sexpr_value)),
+            cut(many0(parse_sexpr_value)),
             cut(lexing::close_array),
         )),
         |(span, rest)| Sexpr::Array { values: rest, span },
@@ -429,7 +431,7 @@ impl<'a> Display for Sexpr {
 #[derive(Debug, Clone)]
 pub struct ExternDeclaration {
     pub name: Substr,
-    pub(crate) type_scheme: TypeScheme,
+    pub type_scheme: TypeScheme,
     pub span: Span,
 }
 
@@ -471,9 +473,12 @@ impl Preamble {
     }
 }
 
-pub fn parse_included_file(
-    input: Span,
-) -> IResult<Span, (Vec<ExternDeclaration>, Vec<FunctionDefinition>)> {
+pub struct IncludedProgram {
+    pub externs: Vec<ExternDeclaration>,
+    pub defines: Vec<FunctionDefinition>,
+}
+
+pub fn parse_included_file(input: Span) -> IResult<Span, IncludedProgram> {
     map(
         all_consuming(many0(alt((
             map(parse_extern, Preamble::Extern),
@@ -487,30 +492,27 @@ pub fn parse_included_file(
                 .into_iter()
                 .map(|item| item.try_into_extern().ok().unwrap())
                 .collect();
-            let (definitions, _) = preambles
+            let (defines, _) = preambles
                 .into_iter()
                 .partition::<Vec<_>, _>(|value| matches!(value, Preamble::Definition(..)));
-            let definitions: Vec<_> = definitions
+            let defines: Vec<_> = defines
                 .into_iter()
                 .map(|item| item.try_into_definition().ok().unwrap())
                 .collect();
 
-            (externs, definitions)
+            IncludedProgram { externs, defines }
         },
     )(input)
 }
 
-pub fn parse_program(
-    input: Span,
-) -> IResult<
-    Span,
-    (
-        Vec<ExternDeclaration>,
-        Vec<FunctionDefinition>,
-        Vec<Include>,
-        Sexpr,
-    ),
-> {
+pub struct ParsedProgram {
+    pub externs: Vec<ExternDeclaration>,
+    pub defines: Vec<FunctionDefinition>,
+    pub includes: Vec<Include>,
+    pub expr: Sexpr,
+}
+
+pub fn parse_program(input: Span) -> IResult<Span, ParsedProgram> {
     map(
         all_consuming(tuple((
             many0(alt((
@@ -531,7 +533,7 @@ pub fn parse_program(
             let (definitions, includes) = preambles
                 .into_iter()
                 .partition::<Vec<_>, _>(|value| matches!(value, Preamble::Definition(..)));
-            let definitions: Vec<_> = definitions
+            let defines: Vec<_> = definitions
                 .into_iter()
                 .map(|item| item.try_into_definition().ok().unwrap())
                 .collect();
@@ -540,15 +542,15 @@ pub fn parse_program(
                 .map(|item| item.try_into_include().ok().unwrap())
                 .collect();
 
-            (
+            ParsedProgram {
                 externs,
-                definitions,
+                defines,
                 includes,
-                Sexpr::Seq {
+                expr: Sexpr::Seq {
                     sub_expressions,
                     span,
                 },
-            )
+            }
         },
     )(input)
 }
