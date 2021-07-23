@@ -12,6 +12,7 @@ use crate::{
     executor::value::{Value, ValueFrom},
     model::Game,
 };
+use arcstr::Substr;
 use lazy_static::lazy_static;
 use maplit::hashmap;
 use std::collections::HashMap;
@@ -31,7 +32,7 @@ pub struct Stack {
 
 #[derive(Debug)]
 pub struct Heap {
-    heap: HashMap<String, Vec<Value>>,
+    heap: HashMap<Substr, Vec<Value>>,
 }
 
 impl Default for Heap {
@@ -40,7 +41,7 @@ impl Default for Heap {
             heap: HashMap::new(),
         };
         for f in RUST_FN.keys() {
-            heap.store(f.to_string(), Value::RustFn(*f));
+            heap.store(Substr::from(*f), Value::RustFn(*f));
         }
         heap
     }
@@ -141,7 +142,7 @@ impl Executor {
                         if let Some(func) = RUST_FN.get(name) {
                             func(self, game)?;
                         } else {
-                            return Err(RuntimeError::InvalidFn(name.to_string()));
+                            return Err(RuntimeError::InvalidFn(name.into()));
                         }
                         true
                     }
@@ -177,7 +178,7 @@ impl Heap {
     pub fn clear(&mut self) {
         *self = Self::default();
     }
-    pub fn store(&mut self, key: String, value: Value) {
+    pub fn store(&mut self, key: Substr, value: Value) {
         let data = self.heap.entry(key).or_default();
         data.push(value);
     }
@@ -186,17 +187,17 @@ impl Heap {
         if let Some(value) = self.heap.get(key).and_then(|internal| internal.last()) {
             Ok(value.clone())
         } else {
-            Err(RuntimeError::MissingHeapValue(key.to_string()))
+            Err(RuntimeError::MissingHeapValue(key.into()))
         }
     }
     pub fn unload(&mut self, key: &str) -> Result<(), RuntimeError> {
         if let Some(_) = self.heap.get_mut(key).and_then(|inner| inner.pop()) {
             Ok(())
         } else {
-            Err(RuntimeError::MissingHeapValue(key.to_string()))
+            Err(RuntimeError::MissingHeapValue(key.into()))
         }
     }
-    pub fn iter(&self) -> impl Iterator<Item = (&String, &Vec<Value>)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&Substr, &Vec<Value>)> {
         self.heap.iter()
     }
 }

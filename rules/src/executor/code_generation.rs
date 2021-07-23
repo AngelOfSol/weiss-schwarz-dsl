@@ -260,7 +260,7 @@ fn generate_internal(
 pub struct Generated {
     pub executable: Vec<ExecutableBytecode>,
     pub labeled: Vec<LabeledBytecode>,
-    pub labels: HashMap<String, usize>,
+    pub labels: HashMap<Substr, usize>,
 }
 
 pub fn generate(ast: TypedAst, externs: &[ExternDeclaration]) -> Generated {
@@ -288,7 +288,7 @@ pub fn generate(ast: TypedAst, externs: &[ExternDeclaration]) -> Generated {
         .enumerate()
         .filter_map(|(idx, item)| {
             if let LabeledBytecode::Label(value) = item {
-                Some((value.to_string(), idx))
+                Some((value.clone(), idx))
             } else {
                 None
             }
@@ -301,7 +301,7 @@ pub fn generate(ast: TypedAst, externs: &[ExternDeclaration]) -> Generated {
             .map(|x| match x {
                 LabeledBytecode::Print => ExecutableBytecode::Print,
                 LabeledBytecode::Call(value) if value == "print" => ExecutableBytecode::Print,
-                LabeledBytecode::Call(value) => ExecutableBytecode::Call(value.to_string()),
+                LabeledBytecode::Call(value) => ExecutableBytecode::Call(value.clone()),
                 LabeledBytecode::Load(value) => ExecutableBytecode::Load(value.clone()),
                 LabeledBytecode::LoadLabel(label) => {
                     ExecutableBytecode::Load(Value::Label(Label {
@@ -309,7 +309,7 @@ pub fn generate(ast: TypedAst, externs: &[ExternDeclaration]) -> Generated {
                         ip: label_values[label.as_str()],
                     }))
                 }
-                LabeledBytecode::Label(value) => ExecutableBytecode::Label(value.to_string()),
+                LabeledBytecode::Label(value) => ExecutableBytecode::Label(value.clone()),
                 LabeledBytecode::Jump(label) => {
                     ExecutableBytecode::Jump(label_values[label.as_str()])
                 }
@@ -317,12 +317,10 @@ pub fn generate(ast: TypedAst, externs: &[ExternDeclaration]) -> Generated {
                     ExecutableBytecode::JumpIf(label_values[label.as_str()])
                 }
                 LabeledBytecode::Return => ExecutableBytecode::Return,
-                LabeledBytecode::Store(binding) => ExecutableBytecode::Store(binding.to_string()),
-                LabeledBytecode::LoadRef(binding) => {
-                    ExecutableBytecode::LoadRef(binding.to_string())
-                }
+                LabeledBytecode::Store(binding) => ExecutableBytecode::Store(binding.clone()),
+                LabeledBytecode::LoadRef(binding) => ExecutableBytecode::LoadRef(binding.clone()),
                 LabeledBytecode::UnloadRef(binding) => {
-                    ExecutableBytecode::UnloadRef(binding.to_string())
+                    ExecutableBytecode::UnloadRef(binding.clone())
                 }
                 LabeledBytecode::CallDynamic => ExecutableBytecode::CallDynamic,
                 LabeledBytecode::Unload => ExecutableBytecode::Unload,

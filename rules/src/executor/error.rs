@@ -110,9 +110,9 @@ pub enum RuntimeError {
     #[error("bytecode should not try to load label directly: '{0}")]
     LoadLabel(usize),
     #[error("missing heap value name: {0}")]
-    MissingHeapValue(String),
+    MissingHeapValue(Substr),
     #[error("invalid fn name \"{0}\"")]
-    InvalidFn(String),
+    InvalidFn(Substr),
     #[error("invalid call-dynamic, found: {0}, expected: RustFn|Label")]
     InvalidCallDynamic(Value),
     #[error("found an empty array when an array with at least 1 element was expected")]

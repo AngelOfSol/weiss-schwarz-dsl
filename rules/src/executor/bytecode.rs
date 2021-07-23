@@ -7,17 +7,17 @@ use crate::executor::value::Value;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ExecutableBytecode {
     Print,
-    Call(String),
+    Call(Substr),
     CallDynamic,
     Load(Value),
     Unload,
     Jump(usize),
     JumpIf(usize),
-    Store(String),
-    LoadRef(String),
-    UnloadRef(String),
+    Store(Substr),
+    LoadRef(Substr),
+    UnloadRef(Substr),
     /// NO-OP, specifically added for debugging purposes
-    Label(String),
+    Label(Substr),
     Return,
     MakeArray,
 }

@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     fs::write,
     sync::mpsc,
     time::{Duration, Instant},
@@ -68,6 +69,8 @@ pub struct Compilation {
     typed: Option<TypedAst>,
     generated: Option<Generated>,
     executor: Executor,
+
+    breakpoints: HashSet<usize>,
 }
 
 impl Default for Compilation {
@@ -85,6 +88,7 @@ impl Default for Compilation {
             typed: Default::default(),
             generated: Default::default(),
             executor: Default::default(),
+            breakpoints: Default::default(),
         }
     }
 }
@@ -184,13 +188,13 @@ fn try_compile(input: String) -> Compilation {
         parsed,
         typed,
         generated,
-        executor: Executor::default(),
         taken: Times {
             parsing,
             semantic,
             code_gen,
             total: Instant::now() - start,
         },
+        ..Default::default()
     }
 }
 
@@ -248,6 +252,7 @@ impl DebugUi {
         let game = &mut self.game;
         let executor = &mut self.compiled.executor;
         let output = &mut self.console_lines;
+        let breakpoints = &mut self.compiled.breakpoints;
         if let Some(generated) = &self.compiled.generated {
             ui.columns(3, |ui| {
                 ScrollArea::auto_sized().show(&mut ui[0], |ui| {
@@ -255,8 +260,10 @@ impl DebugUi {
                         if address == executor.ip {
                             ui.separator();
                             ui.visuals_mut().override_text_color = Some(Color32::GREEN);
-                        } else if executor.ip_stack.contains(&address) {
+                        } else if breakpoints.contains(&address) {
                             ui.visuals_mut().override_text_color = Some(Color32::RED);
+                        } else if executor.ip_stack.contains(&address) {
+                            ui.visuals_mut().override_text_color = Some(Color32::BLUE);
                         } else {
                             ui.visuals_mut().override_text_color = None;
                         }
@@ -266,7 +273,15 @@ impl DebugUi {
                         if matches!(instruction, LabeledBytecode::Label(..)) {
                             ui.add(widget);
                         } else {
-                            ui.indent("bytecode", |ui| ui.add(widget));
+                            ui.indent("bytecode", |ui| {
+                                if ui.add(widget).clicked() {
+                                    if breakpoints.contains(&address) {
+                                        breakpoints.remove(&address);
+                                    } else {
+                                        breakpoints.insert(address);
+                                    }
+                                }
+                            });
                         }
                     }
                 });
@@ -350,6 +365,10 @@ impl DebugUi {
                                         }
                                         break;
                                     }
+                                }
+
+                                if breakpoints.contains(&executor.ip) {
+                                    break;
                                 }
                             }
                         }
